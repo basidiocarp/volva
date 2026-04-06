@@ -1,0 +1,22 @@
+[package]
+name = "volva-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+base64 = "0.22"
+dirs.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+volva-core = { path = "../volva-core" }
+
+[lints]
+workspace = true

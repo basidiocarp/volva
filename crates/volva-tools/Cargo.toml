@@ -1,0 +1,12 @@
+[package]
+name = "volva-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+volva-core = { path = "../volva-core" }
+
+[lints]
+workspace = true
