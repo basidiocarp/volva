@@ -64,9 +64,10 @@ fn home_dir() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-const fn provider_filename(provider: AuthProvider) -> &'static str {
+fn provider_filename(provider: AuthProvider) -> &'static str {
     match provider {
         AuthProvider::Anthropic => "anthropic.json",
+        _ => unreachable!("unsupported auth provider"),
     }
 }
 

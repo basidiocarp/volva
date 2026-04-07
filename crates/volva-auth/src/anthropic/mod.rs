@@ -84,6 +84,7 @@ impl AnthropicLoginSession {
         let api_key = match self.request.target {
             AuthTarget::ClaudeAi => None,
             AuthTarget::Console => Some(oauth::create_api_key(&token_response.access_token).await?),
+            _ => unreachable!("unsupported Anthropic login target: {}", self.request.target),
         };
 
         let FinalizedAnthropicLogin { result, tokens } =

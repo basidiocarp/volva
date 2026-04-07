@@ -83,6 +83,7 @@ pub fn login_hint(provider: AuthProvider, target: AuthTarget) -> &'static str {
         (AuthProvider::Anthropic, AuthTarget::Console) => {
             "Run `volva auth login anthropic --console` to start the console OAuth flow."
         }
+        _ => unreachable!("unsupported auth provider/target combination: {provider}/{target}"),
     }
 }
 
@@ -91,6 +92,7 @@ fn read_env_api_key(provider: AuthProvider) -> Option<String> {
         AuthProvider::Anthropic => std::env::var(ENV_API_KEY)
             .ok()
             .filter(|api_key| !api_key.is_empty()),
+        _ => unreachable!("unsupported auth provider: {provider}"),
     }
 }
 

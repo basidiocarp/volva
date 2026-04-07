@@ -2,8 +2,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub type SessionId = String;
+pub const OAUTH_BETA_HEADER_NAME: &str = "anthropic-beta";
+pub const OAUTH_BETA_HEADER_VALUE: &str = "oauth-2025-04-20";
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendKind {
@@ -20,6 +22,7 @@ impl fmt::Display for BackendKind {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthProvider {
@@ -34,6 +37,7 @@ impl fmt::Display for AuthProvider {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthTarget {
@@ -50,6 +54,7 @@ impl fmt::Display for AuthTarget {
     }
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMode {

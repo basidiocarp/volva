@@ -20,6 +20,7 @@ use crate::{BackendRunRequest, backend::BackendRunResult};
 const HOOK_ADAPTER_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const VOLVA_HOOK_EVENT_SCHEMA_VERSION: &str = "1.0";
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookPhase {
@@ -105,6 +106,7 @@ pub trait HookAdapter: Debug + Send + Sync {
     fn handle(&self, event: HookEvent);
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookAdapterState {
     Disabled,

@@ -68,6 +68,7 @@ pub fn finalize_login(
             }
             AuthMode::ApiKey
         }
+        _ => bail!("unsupported Anthropic login target"),
     };
 
     let (stored_access_token, stored_refresh_token, stored_expires_at, stored_scopes) =

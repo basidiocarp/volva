@@ -6,6 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Volva is the execution-host layer for the Basidiocarp ecosystem. It is a 10-crate Rust workspace centered on `volva-cli`, `volva-runtime`, `volva-auth`, `volva-config`, `volva-api`, and `volva-core`; the remaining crates are support layers. Volva owns backend selection, host context assembly, auth handoff, and hook routing. It defers memory, code intelligence, coordination, and install policy to sibling repos.
 
+## Crate Status
+
+Active implementation crates:
+
+- `volva-cli`
+- `volva-runtime`
+- `volva-auth`
+- `volva-config`
+- `volva-api`
+- `volva-core` as the shared foundation for enums, auth/status types, and shared constants
+
+Thin support or stub crates:
+
+- `volva-adapters`
+- `volva-bridge`
+- `volva-compat`
+- `volva-tools`
+
+Keep that distinction explicit when updating docs or planning work. The support crates are intentionally small and mostly placeholder-like today.
+
 ---
 
 ## What Volva Does NOT Do

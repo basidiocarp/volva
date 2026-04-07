@@ -66,6 +66,7 @@ fn handle_login(command: LoginCommand) -> Result<()> {
     let provider = AuthProvider::from(command.provider);
     match provider {
         AuthProvider::Anthropic => handle_anthropic_login(command),
+        _ => unreachable!("unsupported auth provider"),
     }
 }
 

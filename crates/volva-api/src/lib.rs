@@ -4,13 +4,11 @@ use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
-use volva_core::{AuthMode, ResolvedCredential};
+use volva_core::{AuthMode, OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE, ResolvedCredential};
 
 pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
-pub const OAUTH_BETA_HEADER_NAME: &str = "anthropic-beta";
-pub const OAUTH_BETA_HEADER_VALUE: &str = "oauth-2025-04-20";
 const DEFAULT_INITIAL_RETRY_DELAY: Duration = Duration::from_secs(2);
 const DEFAULT_MAX_RETRY_DELAY: Duration = Duration::from_secs(8);
 const DEFAULT_MAX_RETRIES: u32 = 2;
@@ -104,6 +102,7 @@ pub fn auth_header_kind(credential: &ResolvedCredential) -> &'static str {
     match credential.mode {
         AuthMode::ApiKey => "x-api-key",
         AuthMode::BearerToken => "authorization",
+        _ => unreachable!("unsupported auth mode: {}", credential.mode),
     }
 }
 
@@ -141,6 +140,10 @@ pub async fn chat_once(
             AuthMode::BearerToken => http_request
                 .header("authorization", format!("Bearer {}", credential.secret))
                 .header(OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE),
+            _ => bail!(
+                "unsupported auth mode `{}` for Anthropic API path",
+                credential.mode
+            ),
         };
 
         let response = http_request

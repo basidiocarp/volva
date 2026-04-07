@@ -5,14 +5,12 @@ use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Client;
 use serde::Deserialize;
 use url::Url;
-use volva_core::{AuthProvider, AuthTarget};
+use volva_core::{AuthProvider, AuthTarget, OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE};
 
 use super::account::{AnthropicAccountPayload, AnthropicOrganizationPayload};
 
 pub const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 pub const CLAUDE_AI_INFERENCE_SCOPE: &str = "user:inference";
-pub const OAUTH_BETA_HEADER_NAME: &str = "anthropic-beta";
-pub const OAUTH_BETA_HEADER_VALUE: &str = "oauth-2025-04-20";
 
 const CONSOLE_AUTHORIZE_URL: &str = "https://platform.claude.com/oauth/authorize";
 const CLAUDE_AI_AUTHORIZE_URL: &str = "https://claude.com/cai/oauth/authorize";
@@ -78,10 +76,7 @@ pub fn provider_storage_path() -> PathBuf {
 
 #[must_use]
 pub fn success_redirect_url(target: AuthTarget) -> &'static str {
-    match target {
-        AuthTarget::ClaudeAi => CLAUDEAI_SUCCESS_URL,
-        AuthTarget::Console => CONSOLE_SUCCESS_URL,
-    }
+    anthropic_target_config(target).success_url
 }
 
 #[must_use]
@@ -103,10 +98,7 @@ pub fn uses_bearer_scope(scopes: &[String]) -> bool {
 
 #[must_use]
 pub fn requested_scopes(target: AuthTarget) -> &'static [&'static str] {
-    match target {
-        AuthTarget::ClaudeAi => CLAUDE_AI_SCOPES,
-        AuthTarget::Console => CONSOLE_SCOPES,
-    }
+    anthropic_target_config(target).scopes
 }
 
 pub async fn exchange_code(
@@ -200,25 +192,45 @@ fn build_authorize_url(
     state: &str,
     redirect_uri: &str,
 ) -> String {
-    let base = match target {
-        AuthTarget::ClaudeAi => CLAUDE_AI_AUTHORIZE_URL,
-        AuthTarget::Console => CONSOLE_AUTHORIZE_URL,
-    };
+    let config = anthropic_target_config(target);
 
-    let mut url = Url::parse(base).expect("Anthropic authorize URL constant should be valid");
+    let mut url = Url::parse(config.authorize_url)
+        .expect("Anthropic authorize URL constant should be valid");
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("code", "true");
         query.append_pair("client_id", CLIENT_ID);
         query.append_pair("response_type", "code");
         query.append_pair("redirect_uri", redirect_uri);
-        query.append_pair("scope", &requested_scopes(target).join(" "));
+        query.append_pair("scope", &config.scopes.join(" "));
         query.append_pair("code_challenge", code_challenge);
         query.append_pair("code_challenge_method", "S256");
         query.append_pair("state", state);
     }
 
     url.to_string()
+}
+
+struct AnthropicTargetConfig {
+    authorize_url: &'static str,
+    success_url: &'static str,
+    scopes: &'static [&'static str],
+}
+
+fn anthropic_target_config(target: AuthTarget) -> AnthropicTargetConfig {
+    match target {
+        AuthTarget::ClaudeAi => AnthropicTargetConfig {
+            authorize_url: CLAUDE_AI_AUTHORIZE_URL,
+            success_url: CLAUDEAI_SUCCESS_URL,
+            scopes: CLAUDE_AI_SCOPES,
+        },
+        AuthTarget::Console => AnthropicTargetConfig {
+            authorize_url: CONSOLE_AUTHORIZE_URL,
+            success_url: CONSOLE_SUCCESS_URL,
+            scopes: CONSOLE_SCOPES,
+        },
+        _ => unreachable!("unsupported Anthropic auth target: {target}"),
+    }
 }
 
 fn oauth_client() -> Result<Client> {

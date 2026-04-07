@@ -27,6 +27,10 @@ pub fn validate_request(request: &BackendRunRequest) -> Result<()> {
             "backend `{}` is not available through `volva run` yet; use `volva chat` for the native API path",
             request.backend
         ),
+        _ => bail!(
+            "backend `{}` is not available through `volva run` yet; use `volva chat` for the native API path",
+            request.backend
+        ),
     }
 }
 
@@ -42,5 +46,6 @@ pub fn run(
             official_cli::run(&config.backend.command, request, prepared_prompt)
         }
         BackendKind::AnthropicApi => unreachable!("validated unsupported run backend"),
+        _ => unreachable!("validated unsupported run backend"),
     }
 }
