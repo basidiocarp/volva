@@ -4,17 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Volva is the Claude-first runtime shell and execution-host layer for the Basidiocarp ecosystem. It is a 10-crate Rust workspace centered on `volva-cli`, `volva-runtime`, `volva-auth`, `volva-api`, `volva-config`, and `volva-core`. The thinner support crates are `volva-adapters`, `volva-bridge`, `volva-compat`, and `volva-tools`. Five crates currently have zero tests: `volva-adapters`, `volva-bridge`, `volva-compat`, `volva-core`, and `volva-tools`. Volva owns backend selection, host context assembly, auth handoff, and hook-adapter delivery; it does not own memory, code intelligence, coordination, or install policy.
+Volva is the execution-host layer for the Basidiocarp ecosystem. It is a 10-crate Rust workspace centered on `volva-cli`, `volva-runtime`, `volva-auth`, `volva-config`, `volva-api`, and `volva-core`; the remaining crates are support layers. Volva owns backend selection, host context assembly, auth handoff, and hook routing. It defers memory, code intelligence, coordination, and install policy to sibling repos.
 
 ---
 
 ## What Volva Does NOT Do
 
-- Does not replace Hyphae, Rhizome, Canopy, Cortina, or Stipe: it calls into those seams instead of absorbing them.
-- Does not run the native API path through `volva run` yet: `anthropic-api` is currently a `volva chat` path, not a backend-run path.
-- Does not persist workspace state outside its own config and auth files.
-- Does not ship a full bridge runtime yet: `volva-bridge` is still a thin placeholder crate.
-- Does not expose the larger hook vocabulary described in the architecture notes yet: the current runtime emits a smaller host-event set.
+- Does not replace Hyphae, Rhizome, Canopy, Cortina, or Stipe.
+- Does not let the CLI own backend internals; orchestration stays thin.
+- Does not persist workspace state outside `./volva.json`, `./vendor`, and `~/.volva/auth/anthropic.json`.
+- Does not ship a full bridge runtime yet; `volva-bridge` is still a thin placeholder crate.
+- Does not expose the larger hook vocabulary described in the architecture notes yet; the current runtime emits a smaller host-event set.
 
 ---
 
@@ -42,8 +42,13 @@ Volva is the Claude-first runtime shell and execution-host layer for the Basidio
 ## Build & Test Commands
 
 ```bash
-cargo check
+cargo build --release
 cargo test
+cargo clippy
+cargo fmt
+
+cargo test -p volva-runtime
+cargo test -p volva-auth
 
 cargo run -p volva-cli -- doctor
 cargo run -p volva-cli -- backend status
