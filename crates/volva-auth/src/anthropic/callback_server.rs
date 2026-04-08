@@ -1,9 +1,12 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
+use spore::logging::{SpanContext, workflow_span};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::time::Instant;
+use tracing::Instrument;
+use tracing::warn;
 use url::Url;
 use volva_core::AuthTarget;
 
@@ -28,15 +31,22 @@ enum CallbackAttempt {
 pub struct CallbackServer {
     listener: TcpListener,
     target: AuthTarget,
+    correlation_id: String,
 }
 
 impl CallbackServer {
-    pub async fn bind(target: AuthTarget) -> Result<Self> {
+    pub async fn bind(target: AuthTarget, correlation_id: String) -> Result<Self> {
+        let span_context = callback_span_context("auth-callback", &correlation_id);
+        let _workflow_span = workflow_span("anthropic_callback_bind", &span_context).entered();
         let listener = TcpListener::bind(DEFAULT_BIND_ADDR)
             .await
             .context("failed to bind Anthropic OAuth callback server")?;
 
-        Ok(Self { listener, target })
+        Ok(Self {
+            listener,
+            target,
+            correlation_id,
+        })
     }
 
     pub fn callback_url(&self) -> Result<String> {
@@ -53,10 +63,13 @@ impl CallbackServer {
         expected_state: &str,
         timeout: Duration,
     ) -> Result<CallbackPayload> {
+        let span_context = callback_span_context("auth-callback", &self.correlation_id);
+        let wait_span = workflow_span("anthropic_callback_wait", &span_context);
         let deadline = Instant::now() + timeout;
 
         loop {
             let (stream, _) = tokio::time::timeout_at(deadline, self.listener.accept())
+                .instrument(wait_span.clone())
                 .await
                 .context("timed out waiting for Anthropic OAuth browser callback")?
                 .context("failed to accept Anthropic OAuth callback connection")?;
@@ -66,6 +79,7 @@ impl CallbackServer {
             let mut request_line = String::new();
             reader
                 .read_line(&mut request_line)
+                .instrument(wait_span.clone())
                 .await
                 .context("failed to read Anthropic OAuth callback request")?;
 
@@ -73,6 +87,7 @@ impl CallbackServer {
                 let mut header_line = String::new();
                 reader
                     .read_line(&mut header_line)
+                    .instrument(wait_span.clone())
                     .await
                     .context("failed to read Anthropic OAuth callback headers")?;
                 if header_line.trim().is_empty() {
@@ -86,6 +101,7 @@ impl CallbackServer {
                     return Ok(payload);
                 }
                 CallbackAttempt::Retry(error) => {
+                    warn!(error = %error, "retrying Anthropic OAuth callback wait after invalid callback");
                     write_browser_response(
                         &mut writer,
                         self.target,
@@ -105,6 +121,12 @@ impl CallbackServer {
             }
         }
     }
+}
+
+fn callback_span_context(tool: &str, correlation_id: &str) -> SpanContext {
+    SpanContext::for_app("volva")
+        .with_tool(tool)
+        .with_session_id(correlation_id.to_string())
 }
 
 fn parse_callback(request_line: &str, expected_state: &str) -> CallbackAttempt {
@@ -199,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn callback_server_accepts_valid_code_and_state() {
-        let server = CallbackServer::bind(AuthTarget::ClaudeAi)
+        let server = CallbackServer::bind(AuthTarget::ClaudeAi, "test-session".to_string())
             .await
             .expect("callback server should bind");
         let callback_url = server.callback_url().expect("callback url");
@@ -245,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn callback_server_rejects_state_mismatch() {
-        let server = CallbackServer::bind(AuthTarget::Console)
+        let server = CallbackServer::bind(AuthTarget::Console, "test-session".to_string())
             .await
             .expect("callback server should bind");
         let callback_url = server.callback_url().expect("callback url");
@@ -285,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn callback_server_allows_valid_second_callback_after_bad_first_request() {
-        let server = CallbackServer::bind(AuthTarget::ClaudeAi)
+        let server = CallbackServer::bind(AuthTarget::ClaudeAi, "test-session".to_string())
             .await
             .expect("callback server should bind");
         let callback_url = server.callback_url().expect("callback url");

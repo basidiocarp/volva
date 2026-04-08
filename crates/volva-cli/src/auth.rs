@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{Args, Subcommand, ValueEnum};
+use spore::logging::{SpanContext, workflow_span};
 use tokio::runtime::Runtime;
+use uuid::Uuid;
 use volva_auth::{
     AnthropicLoginRequest, AnthropicLoginSession, auth_status, clear_tokens, save_tokens,
 };
@@ -55,6 +57,8 @@ pub struct StatusCommand {
 }
 
 pub fn handle_auth(auth: AuthCommand) -> Result<()> {
+    let span_context = auth_span_context();
+    let _workflow_span = workflow_span("handle_auth", &span_context).entered();
     match auth.command {
         AuthSubcommand::Login(command) => handle_login(command),
         AuthSubcommand::Logout(command) => handle_logout(command),
@@ -71,6 +75,7 @@ fn handle_login(command: LoginCommand) -> Result<()> {
 }
 
 fn handle_logout(command: LogoutCommand) -> Result<()> {
+    let _workflow_span = workflow_span("auth_logout", &auth_span_context()).entered();
     let provider = AuthProvider::from(command.provider);
     clear_tokens(provider)?;
     println!("Cleared saved {provider} auth state.");
@@ -78,20 +83,28 @@ fn handle_logout(command: LogoutCommand) -> Result<()> {
 }
 
 fn handle_status(command: StatusCommand) -> Result<()> {
+    let _workflow_span = workflow_span("auth_status", &auth_span_context()).entered();
     let status = auth_status(AuthProvider::Anthropic)?;
     render_status(&status, command.json)
 }
 
 fn handle_anthropic_login(command: LoginCommand) -> Result<()> {
+    let correlation_id = Uuid::new_v4().to_string();
+    let span_context = auth_span_context()
+        .with_tool("anthropic-auth")
+        .with_session_id(correlation_id.clone());
+    let _workflow_span = workflow_span("anthropic_login", &span_context).entered();
     let target = if command.console {
         AuthTarget::Console
     } else {
         AuthTarget::ClaudeAi
     };
     let runtime = Runtime::new()?;
+    let _workflow_span = workflow_span("anthropic_login_start", &span_context).entered();
     let session = runtime.block_on(AnthropicLoginSession::start(AnthropicLoginRequest {
         target,
         open_browser: !command.no_browser,
+        correlation_id: Some(correlation_id),
     }))?;
 
     if command.no_browser {
@@ -112,6 +125,7 @@ fn handle_anthropic_login(command: LoginCommand) -> Result<()> {
     println!("Waiting for callback on:");
     println!("  {}", session.callback_url()?);
 
+    let _workflow_span = workflow_span("anthropic_login_complete", &span_context).entered();
     let completion = runtime.block_on(session.complete())?;
     let saved_path = save_tokens(AuthProvider::Anthropic, &completion.tokens)?;
 
@@ -130,6 +144,14 @@ fn handle_anthropic_login(command: LoginCommand) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn auth_span_context() -> SpanContext {
+    let context = SpanContext::for_app("volva").with_tool("auth");
+    match std::env::current_dir() {
+        Ok(path) => context.with_workspace_root(path.display().to_string()),
+        Err(_) => context,
+    }
 }
 
 fn render_status(status: &AuthStatus, json: bool) -> Result<()> {

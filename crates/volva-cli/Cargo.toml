@@ -17,6 +17,7 @@ serde_json.workspace = true
 spore.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing.workspace = true
+uuid.workspace = true
 volva-api = { path = "../volva-api" }
 volva-auth = { path = "../volva-auth" }
 volva-compat = { path = "../volva-compat" }

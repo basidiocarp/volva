@@ -9,6 +9,7 @@ use volva_core::{
 pub struct AnthropicLoginRequest {
     pub target: AuthTarget,
     pub open_browser: bool,
+    pub correlation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

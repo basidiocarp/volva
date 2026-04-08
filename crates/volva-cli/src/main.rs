@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use spore::logging::{SpanContext, root_span, workflow_span};
+use spore::logging::{LogOutput, LoggingConfig, SpanContext, SpanEvents, root_span, workflow_span};
 use tracing::Level;
 use volva_compat::import_candidates;
 use volva_config::VolvaConfig;
@@ -41,7 +41,11 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    spore::logging::init_app("volva", Level::WARN);
+    spore::logging::init_with_config(
+        LoggingConfig::for_app("volva", Level::WARN)
+            .with_output(LogOutput::Stderr)
+            .with_span_events(SpanEvents::Lifecycle),
+    );
     let span_context = current_span_context();
     let _root_span = root_span(&span_context).entered();
     let cli = Cli::parse();

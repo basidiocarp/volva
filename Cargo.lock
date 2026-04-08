@@ -1739,7 +1739,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "spore",
  "tokio",
+ "tracing",
+ "uuid",
  "volva-core",
 ]
 
@@ -1754,7 +1757,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "spore",
  "tokio",
+ "tracing",
  "url",
  "uuid",
  "volva-core",
@@ -1775,6 +1780,7 @@ dependencies = [
  "spore",
  "tokio",
  "tracing",
+ "uuid",
  "volva-api",
  "volva-auth",
  "volva-compat",

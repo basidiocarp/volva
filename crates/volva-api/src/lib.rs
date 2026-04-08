@@ -4,6 +4,9 @@ use anyhow::{Context, Result, bail};
 use reqwest::Client;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
+use spore::logging::{SpanContext, request_span};
+use tracing::warn;
+use uuid::Uuid;
 use volva_core::{AuthMode, OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE, ResolvedCredential};
 
 pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
@@ -111,6 +114,11 @@ pub async fn chat_once(
     credential: &ResolvedCredential,
     request: &ChatRequest,
 ) -> Result<ChatResponse> {
+    let correlation_id = Uuid::new_v4().to_string();
+    let base_span_context = SpanContext::for_app("volva")
+        .with_tool("anthropic-api")
+        .with_session_id(correlation_id);
+    let _request_span = request_span("anthropic_chat", &base_span_context).entered();
     let client = Client::builder()
         .build()
         .context("failed to build Anthropic API client")?;
@@ -167,22 +175,40 @@ pub async fn chat_once(
                 .map(Duration::from_secs);
             let body = response.text().await.unwrap_or_default();
             let wait = retry_after.unwrap_or(delay);
-            eprintln!(
-                "Anthropic returned {status}. Retrying in {}s (attempt {attempts}/{DEFAULT_MAX_RETRIES})...",
-                wait.as_secs()
+            let retry_span_context = response_headers.request_id.as_ref().map_or_else(
+                || base_span_context.clone(),
+                |request_id| {
+                    base_span_context
+                        .clone()
+                        .with_request_id(request_id.clone())
+                },
             );
-            if let Some(request_id) = &response_headers.request_id {
-                eprintln!("Request ID: {request_id}");
-            }
-            if let Some(organization_id) = &response_headers.organization_id {
-                eprintln!("Organization ID: {organization_id}");
-            }
-            if let Some(summary) = summarize_rate_limits(&response_headers.rate_limits) {
-                eprintln!("Rate limits: {summary}");
-            }
-            if !body.is_empty() {
-                eprintln!("API response: {}", summarize_error_body(&body));
-            }
+            let _retry_span = request_span("anthropic_chat_retry", &retry_span_context).entered();
+            let rate_limit_summary =
+                summarize_rate_limits(&response_headers.rate_limits).unwrap_or_default();
+            let response_summary = if body.is_empty() {
+                String::new()
+            } else {
+                summarize_error_body(&body)
+            };
+            warn!(
+                status = %status,
+                attempt = attempts,
+                max_attempts = DEFAULT_MAX_RETRIES,
+                wait_secs = wait.as_secs(),
+                organization_id = response_headers.organization_id.as_deref().unwrap_or("-"),
+                rate_limits = if rate_limit_summary.is_empty() {
+                    "-"
+                } else {
+                    rate_limit_summary.as_str()
+                },
+                response = if response_summary.is_empty() {
+                    "-"
+                } else {
+                    response_summary.as_str()
+                },
+                "Anthropic request scheduled for retry",
+            );
             tokio::time::sleep(wait).await;
             delay = std::cmp::min(delay * 2, DEFAULT_MAX_RETRY_DELAY);
             continue;

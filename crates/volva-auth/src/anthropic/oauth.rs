@@ -4,6 +4,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Client;
 use serde::Deserialize;
+use spore::logging::{SpanContext, request_span, subprocess_span};
+use tracing::warn;
 use url::Url;
 use volva_core::{AuthProvider, AuthTarget, OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE};
 
@@ -106,7 +108,9 @@ pub async fn exchange_code(
     state: &str,
     code_verifier: &str,
     redirect_uri: &str,
+    span_context: &SpanContext,
 ) -> Result<TokenExchangeResponse> {
+    let _request_span = request_span("anthropic_token_exchange", span_context).entered();
     let client = oauth_client()?;
     let response = client
         .post(TOKEN_URL)
@@ -126,7 +130,8 @@ pub async fn exchange_code(
     parse_json_response(response, "Anthropic token exchange").await
 }
 
-pub async fn create_api_key(access_token: &str) -> Result<String> {
+pub async fn create_api_key(access_token: &str, span_context: &SpanContext) -> Result<String> {
+    let _request_span = request_span("anthropic_api_key_exchange", span_context).entered();
     let client = oauth_client()?;
     let response = client
         .post(API_KEY_URL)
@@ -144,44 +149,60 @@ pub async fn create_api_key(access_token: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("Anthropic API key exchange returned no API key"))
 }
 
-pub fn try_open_browser(url: &str) -> bool {
+pub fn try_open_browser(url: &str, span_context: &SpanContext) -> bool {
     #[cfg(target_os = "windows")]
     {
+        let _subprocess_span = subprocess_span("powershell", span_context).entered();
         let command = format!("Start-Process '{}'", url.replace('\'', "''"));
-        return std::process::Command::new("powershell")
+        let launched = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command", &command])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .is_ok();
+        if !launched {
+            warn!("failed to launch browser for Anthropic OAuth");
+        }
+        return launched;
     }
 
     #[cfg(target_os = "macos")]
     {
-        return std::process::Command::new("open")
+        let _subprocess_span = subprocess_span("open", span_context).entered();
+        let launched = std::process::Command::new("open")
             .arg(url)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .is_ok();
+        if !launched {
+            warn!("failed to launch browser for Anthropic OAuth");
+        }
+        return launched;
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        return std::process::Command::new("xdg-open")
+        let _subprocess_span = subprocess_span("xdg-open", span_context).entered();
+        let launched = std::process::Command::new("xdg-open")
             .arg(url)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .is_ok();
+        if !launched {
+            warn!("failed to launch browser for Anthropic OAuth");
+        }
+        return launched;
     }
 
     #[cfg(not(any(target_os = "windows", unix)))]
     {
         let _ = url;
+        let _ = span_context;
         false
     }
 }
@@ -194,8 +215,8 @@ fn build_authorize_url(
 ) -> String {
     let config = anthropic_target_config(target);
 
-    let mut url = Url::parse(config.authorize_url)
-        .expect("Anthropic authorize URL constant should be valid");
+    let mut url =
+        Url::parse(config.authorize_url).expect("Anthropic authorize URL constant should be valid");
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("code", "true");

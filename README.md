@@ -139,8 +139,13 @@ CLI output stays readable.
   `VOLVA_LOG=volva=debug cargo run -p volva-cli -- backend doctor`.
 - `RUST_LOG` still works as the broader Rust fallback, but `VOLVA_LOG` is the
   intended operator knob for this workspace.
+- Default runtime logging is `warn`, with lifecycle span events enabled so
+  auth, API, backend, and hook boundaries emit shared tracing without forcing
+  `debug`.
 - Logging is separate from normal product output: CLI responses still go to
   stdout, while backend stderr, hook diagnostics, and tracing stay on stderr.
+- OAuth login, callback handling, and Anthropic API retry diagnostics now flow
+  through the shared Spore tracing contract instead of ad hoc stderr notices.
 
 ## License
 

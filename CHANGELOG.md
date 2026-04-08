@@ -9,6 +9,23 @@ All notable changes to Volva are documented in this file.
 - **Changelog bootstrap**: Release headings and entry structure now follow the
   shared ecosystem changelog template.
 
+## [0.1.1] - 2026-04-08
+
+### Added
+
+- **Auth tracing hardening**: Anthropic login now carries correlation-aware
+  spans through session start, browser launch, callback wait, token exchange,
+  and API-key minting boundaries.
+
+### Fixed
+
+- **Retry diagnostics**: Anthropic API retry and backoff messages now flow
+  through the shared Spore tracing contract instead of raw stderr notices.
+- **Callback locality**: OAuth callback parsing and retry behavior now emit
+  failure-local tracing so invalid callback attempts are easier to diagnose.
+- **Operator guidance**: Logging docs now explain the default lifecycle span
+  behavior and the shared tracing coverage for auth and API flows.
+
 ## [0.1.0] - 2026-04-08
 
 ### Added

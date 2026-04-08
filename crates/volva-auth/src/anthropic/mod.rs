@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use crate::types::{AnthropicLoginRequest, AnthropicLoginResult, StoredAnthropicTokens};
 use anyhow::Result;
+use spore::logging::{SpanContext, workflow_span};
+use uuid::Uuid;
 use volva_core::AuthTarget;
 
 use self::account::FinalizedAnthropicLogin;
@@ -29,20 +31,34 @@ pub struct AnthropicLoginSession {
     callback_server: CallbackServer,
     authorization_urls: AuthorizationUrls,
     browser_open_attempted: bool,
+    correlation_id: String,
 }
 
 impl AnthropicLoginSession {
     pub async fn start(request: AnthropicLoginRequest) -> Result<Self> {
+        let correlation_id = request
+            .correlation_id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let span_context = auth_span_context("anthropic-auth", &correlation_id);
+        let _session_span = workflow_span("anthropic_login_session_start", &span_context).entered();
         let pkce = PkceParameters::generate();
-        let callback_server = CallbackServer::bind(request.target).await?;
-        let authorization_urls = oauth::authorization_urls(
-            request.target,
-            &pkce.code_challenge,
-            &pkce.state,
-            &callback_server.callback_url()?,
-        );
-        let browser_open_attempted =
-            request.open_browser && oauth::try_open_browser(&authorization_urls.authorize);
+        let callback_server = CallbackServer::bind(request.target, correlation_id.clone()).await?;
+        let authorization_urls = {
+            let _url_span = workflow_span("anthropic_authorization_urls", &span_context).entered();
+            oauth::authorization_urls(
+                request.target,
+                &pkce.code_challenge,
+                &pkce.state,
+                &callback_server.callback_url()?,
+            )
+        };
+        let browser_open_attempted = if request.open_browser {
+            let _browser_span = workflow_span("anthropic_browser_launch", &span_context).entered();
+            oauth::try_open_browser(&authorization_urls.authorize, &span_context)
+        } else {
+            false
+        };
 
         Ok(Self {
             request,
@@ -50,6 +66,7 @@ impl AnthropicLoginSession {
             callback_server,
             authorization_urls,
             browser_open_attempted,
+            correlation_id,
         })
     }
 
@@ -67,24 +84,48 @@ impl AnthropicLoginSession {
         self.browser_open_attempted
     }
 
+    #[must_use]
+    pub fn correlation_id(&self) -> &str {
+        &self.correlation_id
+    }
+
     pub async fn complete(self) -> Result<AnthropicLoginCompletion> {
-        let callback_url = self.callback_server.callback_url()?;
+        let span_context = auth_span_context("anthropic-auth", &self.correlation_id);
+        let _complete_span =
+            workflow_span("anthropic_login_session_complete", &span_context).entered();
+        let callback_url = {
+            let _callback_url_span =
+                workflow_span("anthropic_callback_url", &span_context).entered();
+            self.callback_server.callback_url()?
+        };
         let callback = self
             .callback_server
             .wait_for_callback(&self.pkce.state, DEFAULT_CALLBACK_TIMEOUT)
             .await?;
-        let token_response = oauth::exchange_code(
-            &callback.code,
-            &callback.state,
-            &self.pkce.code_verifier,
-            &callback_url,
-        )
-        .await?;
+        let token_response = {
+            let _token_exchange_span =
+                workflow_span("anthropic_token_exchange", &span_context).entered();
+            oauth::exchange_code(
+                &callback.code,
+                &callback.state,
+                &self.pkce.code_verifier,
+                &callback_url,
+                &span_context,
+            )
+            .await?
+        };
 
         let api_key = match self.request.target {
             AuthTarget::ClaudeAi => None,
-            AuthTarget::Console => Some(oauth::create_api_key(&token_response.access_token).await?),
-            _ => unreachable!("unsupported Anthropic login target: {}", self.request.target),
+            AuthTarget::Console => {
+                let _api_key_span =
+                    workflow_span("anthropic_api_key_mint", &span_context).entered();
+                Some(oauth::create_api_key(&token_response.access_token, &span_context).await?)
+            }
+            _ => unreachable!(
+                "unsupported Anthropic login target: {}",
+                self.request.target
+            ),
         };
 
         let FinalizedAnthropicLogin { result, tokens } =
@@ -101,6 +142,12 @@ pub async fn login(request: AnthropicLoginRequest) -> Result<AnthropicLoginCompl
         .await
 }
 
+fn auth_span_context(tool: &str, correlation_id: &str) -> SpanContext {
+    SpanContext::for_app("volva")
+        .with_tool(tool)
+        .with_session_id(correlation_id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -115,6 +162,7 @@ mod tests {
         let request = AnthropicLoginRequest {
             target: AuthTarget::ClaudeAi,
             open_browser: true,
+            correlation_id: None,
         };
 
         assert!(request.open_browser);
