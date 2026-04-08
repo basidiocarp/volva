@@ -95,13 +95,21 @@ impl CallbackServer {
                 }
             }
 
-            match parse_callback(&request_line, expected_state) {
+            let callback_attempt = {
+                let _parse_span = workflow_span("anthropic_callback_parse", &span_context).entered();
+                parse_callback(&request_line, expected_state)
+            };
+
+            match callback_attempt {
                 CallbackAttempt::Success(payload) => {
                     write_browser_response(&mut writer, self.target, &Ok(payload.clone())).await?;
                     return Ok(payload);
                 }
                 CallbackAttempt::Retry(error) => {
-                    warn!(error = %error, "retrying Anthropic OAuth callback wait after invalid callback");
+                    warn!(
+                        error = %error,
+                        "retrying Anthropic OAuth callback wait after invalid callback"
+                    );
                     write_browser_response(
                         &mut writer,
                         self.target,

@@ -57,42 +57,48 @@ pub struct StatusCommand {
 }
 
 pub fn handle_auth(auth: AuthCommand) -> Result<()> {
-    let span_context = auth_span_context();
+    let correlation_id = Uuid::new_v4().to_string();
+    let span_context = auth_span_context().with_session_id(correlation_id.clone());
     let _workflow_span = workflow_span("handle_auth", &span_context).entered();
     match auth.command {
-        AuthSubcommand::Login(command) => handle_login(command),
-        AuthSubcommand::Logout(command) => handle_logout(command),
-        AuthSubcommand::Status(command) => handle_status(command),
+        AuthSubcommand::Login(command) => handle_login(command, &span_context, correlation_id),
+        AuthSubcommand::Logout(command) => handle_logout(command, &span_context),
+        AuthSubcommand::Status(command) => handle_status(command, &span_context),
     }
 }
 
-fn handle_login(command: LoginCommand) -> Result<()> {
+fn handle_login(
+    command: LoginCommand,
+    span_context: &SpanContext,
+    correlation_id: String,
+) -> Result<()> {
     let provider = AuthProvider::from(command.provider);
     match provider {
-        AuthProvider::Anthropic => handle_anthropic_login(command),
+        AuthProvider::Anthropic => handle_anthropic_login(command, span_context, correlation_id),
         _ => unreachable!("unsupported auth provider"),
     }
 }
 
-fn handle_logout(command: LogoutCommand) -> Result<()> {
-    let _workflow_span = workflow_span("auth_logout", &auth_span_context()).entered();
+fn handle_logout(command: LogoutCommand, span_context: &SpanContext) -> Result<()> {
+    let _workflow_span = workflow_span("auth_logout", span_context).entered();
     let provider = AuthProvider::from(command.provider);
     clear_tokens(provider)?;
     println!("Cleared saved {provider} auth state.");
     Ok(())
 }
 
-fn handle_status(command: StatusCommand) -> Result<()> {
-    let _workflow_span = workflow_span("auth_status", &auth_span_context()).entered();
+fn handle_status(command: StatusCommand, span_context: &SpanContext) -> Result<()> {
+    let _workflow_span = workflow_span("auth_status", span_context).entered();
     let status = auth_status(AuthProvider::Anthropic)?;
     render_status(&status, command.json)
 }
 
-fn handle_anthropic_login(command: LoginCommand) -> Result<()> {
-    let correlation_id = Uuid::new_v4().to_string();
-    let span_context = auth_span_context()
-        .with_tool("anthropic-auth")
-        .with_session_id(correlation_id.clone());
+fn handle_anthropic_login(
+    command: LoginCommand,
+    span_context: &SpanContext,
+    correlation_id: String,
+) -> Result<()> {
+    let span_context = span_context.clone().with_tool("anthropic-auth");
     let _workflow_span = workflow_span("anthropic_login", &span_context).entered();
     let target = if command.console {
         AuthTarget::Console

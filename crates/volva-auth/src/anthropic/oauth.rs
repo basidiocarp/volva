@@ -131,7 +131,7 @@ pub async fn exchange_code(
 }
 
 pub async fn create_api_key(access_token: &str, span_context: &SpanContext) -> Result<String> {
-    let _request_span = request_span("anthropic_api_key_exchange", span_context).entered();
+    let _request_span = request_span("anthropic_api_key_mint", span_context).entered();
     let client = oauth_client()?;
     let response = client
         .post(API_KEY_URL)
@@ -142,11 +142,11 @@ pub async fn create_api_key(access_token: &str, span_context: &SpanContext) -> R
         .context("failed to request Anthropic API key")?;
 
     let payload: CreateApiKeyResponse =
-        parse_json_response(response, "Anthropic API key exchange").await?;
+        parse_json_response(response, "Anthropic API key mint").await?;
     payload
         .raw_key
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("Anthropic API key exchange returned no API key"))
+        .ok_or_else(|| anyhow!("Anthropic API key mint returned no API key"))
 }
 
 pub fn try_open_browser(url: &str, span_context: &SpanContext) -> bool {
