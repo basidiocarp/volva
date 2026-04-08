@@ -9,6 +9,20 @@ All notable changes to Volva are documented in this file.
 - **Changelog bootstrap**: Release headings and entry structure now follow the
   shared ecosystem changelog template.
 
+## [0.1.2] - 2026-04-08
+
+### Changed
+
+- **Foundation alignment**: auth and CLI docs now describe Volva's runtime and
+  host boundary more explicitly.
+
+### Fixed
+
+- **Auth tracing continuity**: correlation-aware spans now stay attached across
+  Anthropic login, callback handling, and retry boundaries.
+- **Retry diagnostics**: shared tracing now carries the failure-local detail
+  operators need for auth retries and callback parsing issues.
+
 ## [0.1.1] - 2026-04-08
 
 ### Added
