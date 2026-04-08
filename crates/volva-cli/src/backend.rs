@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Deserialize;
+use spore::logging::{SpanContext, subprocess_span, tool_span};
 
 use volva_config::VolvaConfig;
 use volva_core::BackendKind;
@@ -263,6 +264,8 @@ struct CortinaFileHealth {
 }
 
 fn collect_hook_delivery_health(runtime: &RuntimeBootstrap, cwd: &Path) -> HookDeliveryHealth {
+    let _tool_span =
+        tool_span("collect_hook_delivery_health", &span_context_for_cwd(cwd)).entered();
     if !runtime.config.hook_adapter.enabled {
         return HookDeliveryHealth {
             probe: HookDeliveryProbe::Disabled,
@@ -382,6 +385,7 @@ fn run_cortina_probe<T>(command: &str, args: &[String], timeout: Duration) -> Re
 where
     T: for<'de> Deserialize<'de>,
 {
+    let _tool_span = tool_span("cortina_probe", &span_context_for_command(command)).entered();
     let output = run_command_with_timeout(command, args, timeout)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -413,6 +417,7 @@ fn run_command_with_timeout(
     args: &[String],
     timeout: Duration,
 ) -> Result<TimedCommandOutput> {
+    let _subprocess_span = subprocess_span(command, &span_context_for_command(command)).entered();
     let mut child = Command::new(command)
         .args(args)
         .stdout(Stdio::piped())
@@ -448,6 +453,20 @@ fn run_command_with_timeout(
         stdout: read_child_stream(child.stdout.take())?,
         stderr: read_child_stream(child.stderr.take())?,
     })
+}
+
+fn span_context_for_cwd(cwd: &Path) -> SpanContext {
+    SpanContext::for_app("volva")
+        .with_tool("backend_doctor")
+        .with_workspace_root(cwd.display().to_string())
+}
+
+fn span_context_for_command(command: &str) -> SpanContext {
+    let context = SpanContext::for_app("volva").with_tool(command.to_string());
+    match env::current_dir() {
+        Ok(path) => context.with_workspace_root(path.display().to_string()),
+        Err(_) => context,
+    }
 }
 
 fn read_child_stream(stream: Option<impl std::io::Read>) -> Result<Vec<u8>> {

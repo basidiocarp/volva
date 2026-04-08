@@ -1,6 +1,7 @@
 use std::process::Command;
 
 use anyhow::{Context, Result};
+use spore::logging::{SpanContext, subprocess_span, tool_span};
 
 use crate::{BackendRunRequest, context::PreparedPrompt};
 
@@ -11,7 +12,12 @@ pub fn run(
     request: &BackendRunRequest,
     prepared_prompt: &PreparedPrompt,
 ) -> Result<BackendRunResult> {
+    let span_context = SpanContext::for_app("volva")
+        .with_tool("official_cli_backend")
+        .with_workspace_root(request.cwd.display().to_string());
+    let _tool_span = tool_span("official_cli_backend", &span_context).entered();
     let args = build_args(prepared_prompt);
+    let _subprocess_span = subprocess_span(command, &span_context).entered();
     let output = Command::new(command)
         .current_dir(&request.cwd)
         .args(&args)

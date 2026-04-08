@@ -5,6 +5,7 @@ mod hooks;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use spore::logging::{SpanContext, workflow_span};
 use volva_bridge::{BridgeConfig, bridge_status};
 use volva_config::VolvaConfig;
 use volva_core::{BackendKind, RuntimeStatus, StatusLine};
@@ -112,6 +113,8 @@ impl RuntimeBootstrap {
     }
 
     pub fn run_backend(&self, request: &BackendRunRequest) -> Result<BackendRunResult> {
+        let _workflow_span =
+            workflow_span("run_backend", &span_context_for_request(request)).entered();
         backend::validate_request(request)?;
         let prepared_prompt = context::assemble_prompt(&self.config, request);
 
@@ -151,6 +154,12 @@ impl RuntimeBootstrap {
 
         Ok(result)
     }
+}
+
+fn span_context_for_request(request: &BackendRunRequest) -> SpanContext {
+    SpanContext::for_app("volva")
+        .with_tool("run_backend")
+        .with_workspace_root(request.cwd.display().to_string())
 }
 
 #[cfg(test)]

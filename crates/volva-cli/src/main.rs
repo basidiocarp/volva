@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use spore::logging::{SpanContext, root_span, workflow_span};
+use tracing::Level;
 use volva_compat::import_candidates;
 use volva_config::VolvaConfig;
 use volva_runtime::RuntimeBootstrap;
@@ -39,7 +41,11 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    spore::logging::init_app("volva", Level::WARN);
+    let span_context = current_span_context();
+    let _root_span = root_span(&span_context).entered();
     let cli = Cli::parse();
+    let _workflow_span = workflow_span(command_name(cli.command.as_ref()), &span_context).entered();
 
     match cli.command.unwrap_or(Command::Doctor) {
         Command::Auth(auth) => handle_auth(auth),
@@ -59,6 +65,25 @@ fn main() -> Result<()> {
             print_paths(root, &config);
             Ok(())
         }
+    }
+}
+
+fn current_span_context() -> SpanContext {
+    let context = SpanContext::for_app("volva");
+    match env::current_dir() {
+        Ok(path) => context.with_workspace_root(path.display().to_string()),
+        Err(_) => context,
+    }
+}
+
+fn command_name(command: Option<&Command>) -> &'static str {
+    match command {
+        Some(Command::Auth(_)) => "auth",
+        Some(Command::Backend(_)) => "backend",
+        Some(Command::Chat(_)) => "chat",
+        Some(Command::Run(_)) => "run",
+        Some(Command::Doctor) | None => "doctor",
+        Some(Command::Paths) => "paths",
     }
 }
 

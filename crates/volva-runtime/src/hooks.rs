@@ -12,6 +12,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use serde::Serialize;
+use spore::logging::{SpanContext, subprocess_span, tool_span};
 use volva_config::HookAdapterConfig;
 use volva_core::BackendKind;
 
@@ -185,6 +186,10 @@ impl ExternalCommandHookAdapter {
     }
 
     fn invoke(&self, event: &HookEvent) -> Result<()> {
+        let span_context = SpanContext::for_app("volva")
+            .with_tool("hook_adapter")
+            .with_workspace_root(event.context.cwd.display().to_string());
+        let _tool_span = tool_span("hook_adapter", &span_context).entered();
         let payload = serde_json::to_vec(&HookAdapterPayload::from(event))
             .context("failed to serialize hook event to JSON")?;
         let stdin_file = TempIoFile::new("payload", Some(&payload))
@@ -215,6 +220,7 @@ impl ExternalCommandHookAdapter {
             .with_context(|| {
                 format!("failed to launch hook adapter `{}`", self.command.display())
             })?;
+        let _subprocess_span = subprocess_span(&self.command.command, &span_context).entered();
 
         let start = Instant::now();
         let status = loop {

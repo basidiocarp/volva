@@ -9,6 +9,8 @@ publish.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+spore.workspace = true
+tracing.workspace = true
 volva-adapters = { path = "../volva-adapters" }
 volva-auth = { path = "../volva-auth" }
 volva-bridge = { path = "../volva-bridge" }

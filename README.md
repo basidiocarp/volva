@@ -130,6 +130,18 @@ cargo clippy
 cargo fmt
 ```
 
+## Logging
+
+Volva writes diagnostic logs to stderr through Spore's shared logger so normal
+CLI output stays readable.
+
+- Use `VOLVA_LOG` for repo-specific logging, for example
+  `VOLVA_LOG=volva=debug cargo run -p volva-cli -- backend doctor`.
+- `RUST_LOG` still works as the broader Rust fallback, but `VOLVA_LOG` is the
+  intended operator knob for this workspace.
+- Logging is separate from normal product output: CLI responses still go to
+  stdout, while backend stderr, hook diagnostics, and tracing stay on stderr.
+
 ## License
 
 See repository license.
