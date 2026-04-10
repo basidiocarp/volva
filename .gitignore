@@ -1,6 +1,7 @@
 target/
 vendor/*
 !vendor/.gitignore
+crates/volva-runtime/vendor/
 .handoffs/
 .archive/
 docs/.DS_Store

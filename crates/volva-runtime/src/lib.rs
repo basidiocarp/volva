@@ -2,20 +2,21 @@ mod backend;
 mod context;
 mod hooks;
 
+use std::fs;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use spore::logging::{SpanContext, workflow_span};
 use volva_bridge::{BridgeConfig, bridge_status};
 use volva_config::VolvaConfig;
-use volva_core::{BackendKind, RuntimeStatus, StatusLine};
+use volva_core::{BackendKind, ExecutionSessionIdentity, RuntimeStatus, StatusLine};
 
 pub use hooks::{
     HookAdapter, HookAdapterState, HookContext, HookEvent, HookPhase, HookShell,
     render_command_line,
 };
 
-pub use backend::BackendRunResult;
+pub use backend::{BackendRunResult, BackendSessionSurface, session_status_lines};
 
 #[derive(Debug, Clone)]
 pub struct RuntimeBootstrap {
@@ -27,8 +28,7 @@ pub struct RuntimeBootstrap {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendRunRequest {
     pub prompt: String,
-    pub cwd: PathBuf,
-    pub backend: BackendKind,
+    pub session: ExecutionSessionIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +100,52 @@ impl RuntimeBootstrap {
         }
     }
 
+    fn execution_session_path(&self) -> PathBuf {
+        self.config
+            .vendor_dir
+            .join("volva")
+            .join("execution-session.json")
+    }
+
+    pub fn persist_execution_session(
+        &self,
+        session: ExecutionSessionIdentity,
+    ) -> Result<BackendSessionSurface> {
+        let surface = backend::session_surface_for(&self.config, session);
+        let path = self.execution_session_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create execution session directory `{}`", parent.display())
+            })?;
+        }
+        let payload =
+            serde_json::to_vec_pretty(&surface).context("failed to serialize execution session")?;
+        fs::write(&path, payload).with_context(|| {
+            format!(
+                "failed to persist execution session snapshot at `{}`",
+                path.display()
+            )
+        })?;
+        Ok(surface)
+    }
+
+    pub fn load_execution_session(&self) -> Result<Option<BackendSessionSurface>> {
+        let path = self.execution_session_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let payload = fs::read(&path).with_context(|| {
+            format!(
+                "failed to read persisted execution session snapshot from `{}`",
+                path.display()
+            )
+        })?;
+        let surface = serde_json::from_slice(&payload)
+            .context("failed to deserialize persisted execution session")?;
+        Ok(Some(surface))
+    }
+
     #[cfg(test)]
     #[must_use]
     pub(crate) fn hook_events(&self) -> Vec<HookEvent> {
@@ -116,6 +162,7 @@ impl RuntimeBootstrap {
         let _workflow_span =
             workflow_span("run_backend", &span_context_for_request(request)).entered();
         backend::validate_request(request)?;
+        self.persist_execution_session(request.session.clone())?;
         let prepared_prompt = context::assemble_prompt(&self.config, request);
 
         let context = HookContext::from_request(request, prepared_prompt.final_prompt());
@@ -130,6 +177,7 @@ impl RuntimeBootstrap {
             Ok(result) => result,
             Err(error) => {
                 let failure_context = context.with_error(error.to_string());
+                self.persist_execution_session(failure_context.execution_session.clone())?;
                 self.hooks
                     .emit(HookPhase::BackendFailed, failure_context.clone());
                 self.flush_hook_diagnostics();
@@ -140,6 +188,7 @@ impl RuntimeBootstrap {
         };
 
         let completed_context = context.with_result(&result);
+        self.persist_execution_session(completed_context.execution_session.clone())?;
         if result.success() {
             self.hooks
                 .emit(HookPhase::ResponseComplete, completed_context.clone());
@@ -159,18 +208,45 @@ impl RuntimeBootstrap {
 fn span_context_for_request(request: &BackendRunRequest) -> SpanContext {
     SpanContext::for_app("volva")
         .with_tool("run_backend")
-        .with_workspace_root(request.cwd.display().to_string())
+        .with_session_id(request.session.session_id.as_str().to_string())
+        .with_workspace_root(request.session.workspace.workspace_root.clone())
 }
 
 #[cfg(test)]
 mod tests {
     use super::RuntimeBootstrap;
+    use std::fs;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+    use std::time::{SystemTime, UNIX_EPOCH};
     use volva_config::VolvaConfig;
-    use volva_core::BackendKind;
+    use volva_core::{
+        BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
+        ExecutionSessionState, WorkspaceBinding,
+    };
 
     use crate::{BackendRunRequest, HookAdapter, HookEvent, HookPhase, HookShell};
+
+    fn test_session(cwd: &str, backend: BackendKind) -> ExecutionSessionIdentity {
+        ExecutionSessionIdentity::new(
+            ExecutionMode::Run,
+            backend,
+            WorkspaceBinding::from_root(cwd),
+            ExecutionParticipantIdentity {
+                participant_id: "operator@volva".to_string(),
+                host_kind: "volva".to_string(),
+            },
+            ExecutionSessionState::Active,
+        )
+    }
+
+    fn unique_vendor_dir(label: &str) -> PathBuf {
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_millis();
+        std::env::temp_dir().join(format!("volva-{label}-{millis}"))
+    }
 
     #[derive(Debug, Default)]
     struct ForwardingHookAdapter {
@@ -239,8 +315,7 @@ mod tests {
         let result = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "headless ok".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect("echo backend should run");
 
@@ -272,8 +347,7 @@ mod tests {
         let result = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "show status".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect("echo backend should run");
 
@@ -292,8 +366,7 @@ mod tests {
         runtime
             .run_backend(&BackendRunRequest {
                 prompt: "show status".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect("echo backend should run");
 
@@ -329,8 +402,7 @@ mod tests {
         let result = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "headless adapter".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect("echo backend should run");
 
@@ -363,8 +435,7 @@ mod tests {
         let error = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "headless fail".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect_err("missing backend command should fail");
 
@@ -393,8 +464,7 @@ mod tests {
         let result = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "headless fail".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::OfficialCli,
+                session: test_session("/tmp", BackendKind::OfficialCli),
             })
             .expect("false backend should launch");
 
@@ -425,8 +495,7 @@ mod tests {
         let error = runtime
             .run_backend(&BackendRunRequest {
                 prompt: "headless fail".to_string(),
-                cwd: PathBuf::from("/tmp"),
-                backend: BackendKind::AnthropicApi,
+                session: test_session("/tmp", BackendKind::AnthropicApi),
             })
             .expect_err("unsupported backend should fail before hook dispatch");
 
@@ -437,5 +506,33 @@ mod tests {
             "unexpected error: {error}"
         );
         assert!(runtime.hook_events().is_empty());
+    }
+
+    #[test]
+    fn run_backend_persists_latest_execution_session_snapshot() {
+        let vendor_dir = unique_vendor_dir("execution-session");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        let session = test_session("/tmp", BackendKind::OfficialCli);
+        runtime
+            .run_backend(&BackendRunRequest {
+                prompt: "persist me".to_string(),
+                session: session.clone(),
+            })
+            .expect("echo backend should run");
+
+        let loaded = runtime
+            .load_execution_session()
+            .expect("execution session snapshot should load")
+            .expect("execution session snapshot should exist");
+
+        assert_eq!(loaded.session.session_id, session.session_id);
+        assert_eq!(loaded.session.workspace.workspace_root, "/tmp");
+        assert_eq!(loaded.session.state, ExecutionSessionState::Finished);
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 }

@@ -6,8 +6,10 @@ use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use spore::logging::{SpanContext, request_span};
 use tracing::warn;
-use uuid::Uuid;
-use volva_core::{AuthMode, OAUTH_BETA_HEADER_NAME, OAUTH_BETA_HEADER_VALUE, ResolvedCredential};
+use volva_core::{
+    AuthMode, ExecutionSessionIdentity, ExecutionSessionState, OAUTH_BETA_HEADER_NAME,
+    OAUTH_BETA_HEADER_VALUE, ResolvedCredential,
+};
 
 pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
@@ -35,6 +37,22 @@ impl Default for ApiClientConfig {
 pub struct ChatRequest {
     pub prompt: String,
     pub max_tokens: u32,
+    pub session: ExecutionSessionIdentity,
+}
+
+impl ChatRequest {
+    #[must_use]
+    pub fn new(
+        prompt: impl Into<String>,
+        max_tokens: u32,
+        session: ExecutionSessionIdentity,
+    ) -> Self {
+        Self {
+            prompt: prompt.into(),
+            max_tokens,
+            session,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,10 +132,22 @@ pub async fn chat_once(
     credential: &ResolvedCredential,
     request: &ChatRequest,
 ) -> Result<ChatResponse> {
-    let correlation_id = Uuid::new_v4().to_string();
+    chat_once_with_state_observer(config, credential, request, |_| {}).await
+}
+
+pub async fn chat_once_with_state_observer<F>(
+    config: &ApiClientConfig,
+    credential: &ResolvedCredential,
+    request: &ChatRequest,
+    mut on_state: F,
+) -> Result<ChatResponse>
+where
+    F: FnMut(ExecutionSessionState),
+{
     let base_span_context = SpanContext::for_app("volva")
         .with_tool("anthropic-api")
-        .with_session_id(correlation_id);
+        .with_session_id(request.session.session_id.to_string())
+        .with_workspace_root(request.session.workspace.workspace_root.clone());
     let _request_span = request_span("anthropic_chat", &base_span_context).entered();
     let client = Client::builder()
         .build()
@@ -209,7 +239,9 @@ pub async fn chat_once(
                 },
                 "Anthropic request scheduled for retry",
             );
+            on_state(ExecutionSessionState::Paused);
             tokio::time::sleep(wait).await;
+            on_state(ExecutionSessionState::Resumed);
             delay = std::cmp::min(delay * 2, DEFAULT_MAX_RETRY_DELAY);
             continue;
         }

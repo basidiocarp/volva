@@ -4,10 +4,11 @@ use anyhow::{Result, bail};
 use clap::Args;
 
 use volva_config::VolvaConfig;
-use volva_core::BackendKind;
+use volva_core::{BackendKind, ExecutionMode, ExecutionSessionState};
 use volva_runtime::{BackendRunRequest, RuntimeBootstrap};
 
 use crate::backend::BackendArg;
+use crate::session::session_for_workspace;
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RunCommand {
@@ -31,10 +32,15 @@ pub fn handle_run(command: RunCommand) -> Result<()> {
     }
 
     let runtime = RuntimeBootstrap::new(config.clone());
+    let session = session_for_workspace(
+        &cwd,
+        ExecutionMode::Run,
+        config.backend.kind,
+        ExecutionSessionState::Active,
+    );
     let result = runtime.run_backend(&BackendRunRequest {
         prompt,
-        cwd,
-        backend: config.backend.kind,
+        session,
     })?;
 
     if result.success() {

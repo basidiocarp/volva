@@ -14,12 +14,13 @@ pub fn run(
 ) -> Result<BackendRunResult> {
     let span_context = SpanContext::for_app("volva")
         .with_tool("official_cli_backend")
-        .with_workspace_root(request.cwd.display().to_string());
+        .with_session_id(request.session.session_id.as_str().to_string())
+        .with_workspace_root(request.session.workspace.workspace_root.clone());
     let _tool_span = tool_span("official_cli_backend", &span_context).entered();
     let args = build_args(prepared_prompt);
     let _subprocess_span = subprocess_span(command, &span_context).entered();
     let output = Command::new(command)
-        .current_dir(&request.cwd)
+        .current_dir(&request.session.workspace.workspace_root)
         .args(&args)
         .output()
         .with_context(|| format!("failed to launch official Claude backend via `{command}`"))?;
@@ -37,21 +38,34 @@ fn build_args(prepared_prompt: &PreparedPrompt) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use volva_config::VolvaConfig;
-    use volva_core::BackendKind;
+    use volva_core::{
+        BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
+        ExecutionSessionState, WorkspaceBinding,
+    };
 
     use crate::BackendRunRequest;
 
     use super::{build_args, run};
 
+    fn test_session(workspace_root: &str) -> ExecutionSessionIdentity {
+        ExecutionSessionIdentity::new(
+            ExecutionMode::Run,
+            BackendKind::OfficialCli,
+            WorkspaceBinding::from_root(workspace_root),
+            ExecutionParticipantIdentity {
+                participant_id: "operator@volva".to_string(),
+                host_kind: "volva".to_string(),
+            },
+            ExecutionSessionState::Active,
+        )
+    }
+
     #[test]
     fn build_args_uses_print_mode_with_assembled_prompt_payload() {
         let request = BackendRunRequest {
             prompt: "summarize the repo".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            backend: BackendKind::OfficialCli,
+            session: test_session("/tmp"),
         };
         let prepared = crate::context::assemble_prompt(&VolvaConfig::default(), &request);
         let args = build_args(&prepared);
@@ -66,8 +80,7 @@ mod tests {
     fn missing_command_returns_launch_error() {
         let request = BackendRunRequest {
             prompt: "hello".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            backend: BackendKind::OfficialCli,
+            session: test_session("/tmp"),
         };
         let prepared = crate::context::assemble_prompt(&VolvaConfig::default(), &request);
         let error = run("/definitely/not/a/real/claude", &request, &prepared)
@@ -85,8 +98,7 @@ mod tests {
     fn successful_command_captures_stdout_and_exit_code() {
         let request = BackendRunRequest {
             prompt: "headless ok".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            backend: BackendKind::OfficialCli,
+            session: test_session("/tmp"),
         };
         let prepared = crate::context::assemble_prompt(&VolvaConfig::default(), &request);
         let result = run("/bin/echo", &request, &prepared).expect("echo command should run");
@@ -101,8 +113,7 @@ mod tests {
     fn launched_command_can_exit_nonzero() {
         let request = BackendRunRequest {
             prompt: "headless fail".to_string(),
-            cwd: PathBuf::from("/tmp"),
-            backend: BackendKind::OfficialCli,
+            session: test_session("/tmp"),
         };
         let prepared = crate::context::assemble_prompt(&VolvaConfig::default(), &request);
         let result =

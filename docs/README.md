@@ -6,8 +6,9 @@ supporting material, not the current source of truth.
 
 Start here:
 
-- [architecture.md](architecture.md): execution-host ownership boundary,
-  backend model, and repo layout
+- [VOLVA-ARCHITECTURE.md](VOLVA-ARCHITECTURE.md): execution-host ownership
+  boundary, backend model, and session identity
+- [architecture.md](architecture.md): compatibility alias for older links
 - [official-backend-plan.md](official-backend-plan.md): near-term plan for the
   first production backend
 - [plans/README.md](plans/README.md): active planning entrypoint

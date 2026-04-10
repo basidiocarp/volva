@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use spore::logging::{SpanContext, subprocess_span, tool_span};
 use volva_config::HookAdapterConfig;
-use volva_core::BackendKind;
+use volva_core::{BackendKind, ExecutionSessionIdentity, ExecutionSessionState};
 
 use crate::{BackendRunRequest, backend::BackendRunResult};
 
@@ -35,6 +35,7 @@ pub enum HookPhase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HookContext {
     pub backend_kind: BackendKind,
+    pub execution_session: ExecutionSessionIdentity,
     pub cwd: PathBuf,
     pub prompt_text: String,
     pub prompt_summary: String,
@@ -53,8 +54,9 @@ impl HookContext {
     pub fn from_request(request: &BackendRunRequest, prompt_text: impl Into<String>) -> Self {
         let prompt_text = prompt_text.into();
         Self {
-            backend_kind: request.backend,
-            cwd: request.cwd.clone(),
+            backend_kind: request.session.backend,
+            execution_session: request.session.clone(),
+            cwd: PathBuf::from(&request.session.workspace.workspace_root),
             prompt_summary: summarize_prompt(&prompt_text),
             prompt_text,
             stdout: None,
@@ -69,12 +71,20 @@ impl HookContext {
         self.stdout = Some(result.stdout.clone());
         self.stderr = Some(result.stderr.clone());
         self.exit_code = result.exit_code;
+        self.execution_session = self
+            .execution_session
+            .clone()
+            .with_state(ExecutionSessionState::Finished);
         self
     }
 
     #[must_use]
     pub fn with_error(mut self, error: impl Into<String>) -> Self {
         self.error = Some(error.into());
+        self.execution_session = self
+            .execution_session
+            .clone()
+            .with_state(ExecutionSessionState::Finished);
         self
     }
 }
@@ -567,9 +577,25 @@ mod tests {
     };
 
     use serde_json::Value;
-    use volva_core::BackendKind;
+    use volva_core::{
+        BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
+        ExecutionSessionState, WorkspaceBinding,
+    };
 
     use super::{HookAdapterConfig, HookAdapterState, HookContext, HookPhase, HookShell};
+
+    fn test_session(cwd: &Path) -> ExecutionSessionIdentity {
+        ExecutionSessionIdentity::new(
+            ExecutionMode::Run,
+            BackendKind::OfficialCli,
+            WorkspaceBinding::from_root(cwd),
+            ExecutionParticipantIdentity {
+                participant_id: "operator@volva".to_string(),
+                host_kind: "volva".to_string(),
+            },
+            ExecutionSessionState::Active,
+        )
+    }
 
     #[test]
     fn default_hook_shell_is_disabled() {
@@ -630,6 +656,7 @@ mod tests {
             HookPhase::BeforePromptSend,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "summarize the repository".to_string(),
                 prompt_summary: "summarize the repository".to_string(),
@@ -671,6 +698,7 @@ mod tests {
             HookPhase::SessionEnd,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "headless fail".to_string(),
                 prompt_summary: "headless fail".to_string(),
@@ -709,6 +737,7 @@ mod tests {
             HookPhase::SessionEnd,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "x".repeat(1024 * 1024),
                 prompt_summary: "headless timeout".to_string(),
@@ -755,6 +784,7 @@ mod tests {
             HookPhase::SessionStart,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "argv test".to_string(),
                 prompt_summary: "argv test".to_string(),

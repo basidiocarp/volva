@@ -23,8 +23,24 @@ pub fn assemble_prompt(config: &VolvaConfig, request: &BackendRunRequest) -> Pre
     let mut lines = vec![
         ENVELOPE_HEADER.to_string(),
         HOST_NOTE.to_string(),
-        format!("cwd: {}", request.cwd.display()),
-        format!("backend: {}", request.backend),
+        format!("session_id: {}", request.session.session_id),
+        format!("workspace_root: {}", request.session.workspace.workspace_root),
+        format!(
+            "worktree_id: {}",
+            request
+                .session
+                .workspace
+                .worktree_id
+                .as_deref()
+                .unwrap_or("none")
+        ),
+        format!("backend: {}", request.session.backend),
+        format!("mode: {}", request.session.mode),
+        format!(
+            "participant: {}",
+            request.session.primary_participant.participant_id
+        ),
+        format!("session_state: {}", request.session.state),
     ];
 
     if !config.model.trim().is_empty() {
@@ -39,10 +55,11 @@ pub fn assemble_prompt(config: &VolvaConfig, request: &BackendRunRequest) -> Pre
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use volva_config::VolvaConfig;
-    use volva_core::BackendKind;
+    use volva_core::{
+        BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionId,
+        ExecutionSessionIdentity, ExecutionSessionState, WorkspaceBinding,
+    };
 
     use crate::BackendRunRequest;
 
@@ -53,8 +70,17 @@ mod tests {
         let config = VolvaConfig::default();
         let request = BackendRunRequest {
             prompt: "summarize the repository".to_string(),
-            cwd: PathBuf::from("/tmp/project"),
-            backend: BackendKind::OfficialCli,
+            session: ExecutionSessionIdentity {
+                session_id: ExecutionSessionId("volva-run-test".to_string()),
+                mode: ExecutionMode::Run,
+                backend: BackendKind::OfficialCli,
+                workspace: WorkspaceBinding::from_root("/tmp/project"),
+                primary_participant: ExecutionParticipantIdentity {
+                    participant_id: "operator@volva".to_string(),
+                    host_kind: "volva".to_string(),
+                },
+                state: ExecutionSessionState::Active,
+            },
         };
 
         let prepared = assemble_prompt(&config, &request);
@@ -63,8 +89,13 @@ mod tests {
             prepared.final_prompt(),
             "[volva-host-context]\n\
 source: host-provided context from volva\n\
-cwd: /tmp/project\n\
+session_id: volva-run-test\n\
+workspace_root: /tmp/project\n\
+worktree_id: none\n\
 backend: official-cli\n\
+mode: run\n\
+participant: operator@volva\n\
+session_state: active\n\
 model: claude-sonnet-4-6\n\n\
 [user-prompt]\n\
 summarize the repository"
@@ -77,8 +108,17 @@ summarize the repository"
         config.model = "   ".to_string();
         let request = BackendRunRequest {
             prompt: "hello".to_string(),
-            cwd: PathBuf::from("/tmp/project"),
-            backend: BackendKind::OfficialCli,
+            session: ExecutionSessionIdentity {
+                session_id: ExecutionSessionId("volva-run-test".to_string()),
+                mode: ExecutionMode::Run,
+                backend: BackendKind::OfficialCli,
+                workspace: WorkspaceBinding::from_root("/tmp/project"),
+                primary_participant: ExecutionParticipantIdentity {
+                    participant_id: "operator@volva".to_string(),
+                    host_kind: "volva".to_string(),
+                },
+                state: ExecutionSessionState::Active,
+            },
         };
 
         let prepared = assemble_prompt(&config, &request);

@@ -2,6 +2,7 @@ mod auth;
 mod backend;
 mod chat;
 mod run;
+mod session;
 
 use std::env;
 use std::path::PathBuf;
@@ -111,7 +112,9 @@ mod tests {
     use crate::auth::{
         AuthProviderArg, AuthSubcommand, LoginCommand, LogoutCommand, StatusCommand,
     };
-    use crate::backend::{BackendArg, BackendSubcommand, DoctorSubcommand, StatusSubcommand};
+    use crate::backend::{
+        BackendArg, BackendSubcommand, DoctorSubcommand, SessionSubcommand, StatusSubcommand,
+    };
     use crate::chat::ChatCommand;
     use crate::run::RunCommand;
 
@@ -196,6 +199,32 @@ mod tests {
         match cli.command {
             Some(Command::Backend(BackendCommand {
                 command: BackendSubcommand::Doctor(DoctorSubcommand {}),
+            })) => {}
+            other => panic!("unexpected parse result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backend_session_parses_cleanly() {
+        let cli = Cli::try_parse_from(["volva", "backend", "session"])
+            .expect("backend session should parse");
+
+        match cli.command {
+            Some(Command::Backend(BackendCommand {
+                command: BackendSubcommand::Session(SessionSubcommand { json: false }),
+            })) => {}
+            other => panic!("unexpected parse result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backend_session_json_parses_cleanly() {
+        let cli = Cli::try_parse_from(["volva", "backend", "session", "--json"])
+            .expect("backend session json should parse");
+
+        match cli.command {
+            Some(Command::Backend(BackendCommand {
+                command: BackendSubcommand::Session(SessionSubcommand { json: true }),
             })) => {}
             other => panic!("unexpected parse result: {other:?}"),
         }

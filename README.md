@@ -41,6 +41,7 @@ Volva keeps the host boundary in one place. It chooses the backend, shapes the p
 ```bash
 cargo check
 cargo run -p volva-cli -- backend status
+cargo run -p volva-cli -- backend session
 cargo run -p volva-cli -- backend doctor
 cargo run -p volva-cli -- auth status
 cargo run -p volva-cli -- chat "say hello"
@@ -115,7 +116,8 @@ volva/
 ## Documentation
 
 - [docs/README.md](docs/README.md) — docs index and reading order
-- [docs/architecture.md](docs/architecture.md) — architecture and ownership boundary
+- [docs/VOLVA-ARCHITECTURE.md](docs/VOLVA-ARCHITECTURE.md) — architecture and ownership boundary
+- [docs/architecture.md](docs/architecture.md) — compatibility alias for older links
 - [docs/official-backend-plan.md](docs/official-backend-plan.md) — first backend plan
 - [docs/hook-adapter-cortina.md](docs/hook-adapter-cortina.md) — Cortina adapter path
 - [docs/ecosystem-boundary-audit.md](docs/ecosystem-boundary-audit.md) — ecosystem overlap and boundary notes

@@ -159,7 +159,7 @@ The current flow is:
 ## Known Gaps
 
 - `volva run` only supports the `official-cli` backend today. `anthropic-api` is intentionally routed through `volva chat`.
-- The hook runtime emits five phases, which is smaller than the broader event set described in `docs/architecture.md`.
+- The hook runtime emits five phases, which is smaller than the broader event set described in `docs/VOLVA-ARCHITECTURE.md`.
 - `volva-adapters`, `volva-bridge`, `volva-compat`, and `volva-tools` are still thin crates.
 - The zero-test crates are `volva-adapters`, `volva-bridge`, `volva-compat`, `volva-core`, and `volva-tools`.
 

@@ -4,14 +4,17 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Deserialize;
+use serde_json;
 use spore::logging::{SpanContext, subprocess_span, tool_span};
 
 use volva_config::VolvaConfig;
 use volva_core::BackendKind;
-use volva_runtime::{RuntimeBootstrap, render_command_line};
+use volva_runtime::{
+    BackendSessionSurface, RuntimeBootstrap, render_command_line, session_status_lines,
+};
 
 #[derive(Debug, Args)]
 pub struct BackendCommand {
@@ -23,6 +26,7 @@ pub struct BackendCommand {
 pub enum BackendSubcommand {
     Status(StatusSubcommand),
     Doctor(DoctorSubcommand),
+    Session(SessionSubcommand),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -30,6 +34,12 @@ pub struct StatusSubcommand {}
 
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct DoctorSubcommand {}
+
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct SessionSubcommand {
+    #[arg(long)]
+    pub json: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum BackendArg {
@@ -62,6 +72,26 @@ pub fn handle_backend(command: BackendCommand) -> Result<()> {
             let config = VolvaConfig::load_from(&root)?;
             let runtime = RuntimeBootstrap::new(config);
             for line in render_backend_doctor(&runtime, &root) {
+                println!("{line}");
+            }
+            Ok(())
+        }
+        BackendSubcommand::Session(SessionSubcommand { json }) => {
+            let root = env::current_dir()?;
+            let config = VolvaConfig::load_from(&root)?;
+            let runtime = RuntimeBootstrap::new(config);
+            let surface = runtime.load_execution_session()?.ok_or_else(|| {
+                anyhow!(
+                    "no persisted execution session is available yet; run `volva run` or `volva chat` first"
+                )
+            })?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&surface)?);
+                return Ok(());
+            }
+
+            for line in render_backend_session(&surface) {
                 println!("{line}");
             }
             Ok(())
@@ -134,6 +164,22 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
         ),
     ];
     lines.extend(hook_delivery_health.render_lines());
+    lines
+}
+
+pub(crate) fn render_backend_session(surface: &BackendSessionSurface) -> Vec<String> {
+    let mut lines = vec![
+        format!("backend: {}", surface.backend),
+        format!("backend_command: {}", surface.backend_command),
+        format!("run_supported: {}", surface.run_supported),
+    ];
+
+    lines.extend(
+        session_status_lines(&surface.session)
+        .into_iter()
+        .map(|line| format!("{}: {}", line.label, line.value))
+    );
+
     lines
 }
 
