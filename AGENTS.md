@@ -103,8 +103,8 @@ If the validator finds real structural issues, fix those before polishing output
 
 Default:
 
-- `claude-mycelium-workspace-router` - route cross-repo work to the right boundary
-- `claude-mycelium-rust-repos` - follow the repo-local Rust workflow
+- `basidiocarp-workspace-router` - route cross-repo work to the right boundary
+- `basidiocarp-rust-repos` - follow the repo-local Rust workflow
 - `systematic-debugging` - explain failures before changing behavior
 
 Situational:

@@ -88,9 +88,9 @@ official backend command while keeping the hook-adapter wiring unchanged.
 ### 1. Build `cortina`
 
 ```bash
-cd /Users/williamnewton/projects/claude-mycelium/cortina
+cd /Users/williamnewton/projects/basidiocarp/cortina
 cargo build
-export PATH="/Users/williamnewton/projects/claude-mycelium/cortina/target/debug:$PATH"
+export PATH="/Users/williamnewton/projects/basidiocarp/cortina/target/debug:$PATH"
 ```
 
 ### 2. Configure `volva` for the smoke run
@@ -118,7 +118,7 @@ Use this `volva.json` in the working directory where you will run `volva`:
 ### 3. Confirm the adapter argv before running
 
 ```bash
-cd /Users/williamnewton/projects/claude-mycelium/volva
+cd /Users/williamnewton/projects/basidiocarp/volva
 cargo run -p volva-cli -- backend status
 ```
 
@@ -133,7 +133,7 @@ hook_adapter: configured-external:cortina adapter volva hook-event
 ### 4. Run `volva` with a unique prompt marker
 
 ```bash
-cd /Users/williamnewton/projects/claude-mycelium/volva
+cd /Users/williamnewton/projects/basidiocarp/volva
 cargo run -p volva-cli -- run volva-cortina-smoke-001
 ```
 
@@ -142,7 +142,7 @@ Expected stdout:
 ```text
 -p [volva-host-context]
 source: host-provided context from volva
-cwd: /Users/williamnewton/projects/claude-mycelium/volva
+cwd: /Users/williamnewton/projects/basidiocarp/volva
 backend: official-cli
 ...
 [user-prompt]
@@ -157,8 +157,8 @@ the raw user prompt. The important proof points are that stdout starts with
 ### 5. Confirm intake through supported `cortina` surfaces
 
 ```bash
-cargo run --manifest-path /Users/williamnewton/projects/claude-mycelium/cortina/Cargo.toml -- status --cwd /Users/williamnewton/projects/claude-mycelium/volva
-cargo run --manifest-path /Users/williamnewton/projects/claude-mycelium/cortina/Cargo.toml -- doctor --cwd /Users/williamnewton/projects/claude-mycelium/volva
+cargo run --manifest-path /Users/williamnewton/projects/basidiocarp/cortina/Cargo.toml -- status --cwd /Users/williamnewton/projects/basidiocarp/volva
+cargo run --manifest-path /Users/williamnewton/projects/basidiocarp/cortina/Cargo.toml -- doctor --cwd /Users/williamnewton/projects/basidiocarp/volva
 cargo run -p volva-cli -- backend doctor
 ```
 

@@ -53,7 +53,7 @@ Do these before adding more features:
 5. only then reintroduce memory hydration and compaction
 
 For substantive multi-agent implementation work, create a handoff document in
-`volva/docs/handoffs/` before dispatching agents. The handoff should define the
+`.handoffs/` before dispatching agents. The handoff should define the
 write scope, constraints, acceptance criteria, and validation commands so the
 worker and auditor are reviewing the same contract.
 
@@ -267,7 +267,7 @@ Integration target later:
 
 - run against a real local `claude -p` installation in an ignored/manual test
 - the current `volva -> cortina` hook-adapter smoke path is documented in
-  `docs/HOOK-ADAPTER-CORTINA.md`
+  `docs/hook-adapter-cortina.md`
 
 ## Concrete Next Steps
 

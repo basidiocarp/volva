@@ -114,10 +114,11 @@ volva/
 
 ## Documentation
 
-- [docs/VOLVA-ARCHITECTURE.md](docs/VOLVA-ARCHITECTURE.md) — architecture and ownership boundary
-- [docs/IMPLEMENTATION-PLAN-OFFICIAL-BACKEND.md](docs/IMPLEMENTATION-PLAN-OFFICIAL-BACKEND.md) — first backend plan
-- [docs/HOOK-ADAPTER-CORTINA.md](docs/HOOK-ADAPTER-CORTINA.md) — Cortina adapter path
-- [docs/ECOSYSTEM-BOUNDARY-AUDIT.md](docs/ECOSYSTEM-BOUNDARY-AUDIT.md) — ecosystem overlap and boundary notes
+- [docs/README.md](docs/README.md) — docs index and reading order
+- [docs/architecture.md](docs/architecture.md) — architecture and ownership boundary
+- [docs/official-backend-plan.md](docs/official-backend-plan.md) — first backend plan
+- [docs/hook-adapter-cortina.md](docs/hook-adapter-cortina.md) — Cortina adapter path
+- [docs/ecosystem-boundary-audit.md](docs/ecosystem-boundary-audit.md) — ecosystem overlap and boundary notes
 
 ---
 
@@ -125,10 +126,21 @@ volva/
 
 ```bash
 cargo build --release
+cargo nextest run
 cargo test
 cargo clippy
 cargo fmt
 ```
+
+- Prefer `cargo nextest run` for the normal test loop.
+- Keep `criterion` out of scope here until a concrete hot path is named.
+- Use whole-command timing when backend or auth flows feel slow, for example
+  `time cargo run -p volva-cli -- backend doctor`.
+- Workspace profiles are tuned in `Cargo.toml`: release builds use LTO,
+  single-codegen-unit, panic-abort, and strip; dev builds keep line tables so
+  iteration stays usable without giving up too much debug context.
+- reqwest stays the intended async HTTP stack for Volva's auth and API
+  clients. This is a networked host layer, so that cost is expected.
 
 ## Logging
 

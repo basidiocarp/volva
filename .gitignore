@@ -1,8 +1,8 @@
 target/
 vendor/*
 !vendor/.gitignore
-docs/handoffs/
-docs/archive/
+.handoffs/
+.archive/
 docs/.DS_Store
 .DS_Store
 crates/.DS_Store

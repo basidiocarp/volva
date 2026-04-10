@@ -28,13 +28,13 @@ Keep that distinction explicit when updating docs or planning work. The support 
 
 ---
 
-## What Volva Does NOT Do
+## Operating Model
 
-- Does not replace Hyphae, Rhizome, Canopy, Cortina, or Stipe.
-- Does not let the CLI own backend internals; orchestration stays thin.
-- Does not persist workspace state outside `./volva.json`, `./vendor`, and `~/.volva/auth/anthropic.json`.
-- Does not ship a full bridge runtime yet; `volva-bridge` is still a thin placeholder crate.
-- Does not expose the larger hook vocabulary described in the architecture notes yet; the current runtime emits a smaller host-event set.
+- Do not replace Hyphae, Rhizome, Canopy, Cortina, or Stipe.
+- Do not let the CLI absorb backend internals. Orchestration stays thin.
+- Do not spread runtime state beyond `./volva.json`, `./vendor`, and `~/.volva/auth/anthropic.json`.
+- Do not treat the support crates as fuller products than they are today.
+- Do not document a hook surface larger than the runtime actually emits.
 
 ---
 
@@ -159,7 +159,7 @@ The current flow is:
 ## Known Gaps
 
 - `volva run` only supports the `official-cli` backend today. `anthropic-api` is intentionally routed through `volva chat`.
-- The hook runtime emits five phases, which is smaller than the broader event set described in `docs/VOLVA-ARCHITECTURE.md`.
+- The hook runtime emits five phases, which is smaller than the broader event set described in `docs/architecture.md`.
 - `volva-adapters`, `volva-bridge`, `volva-compat`, and `volva-tools` are still thin crates.
 - The zero-test crates are `volva-adapters`, `volva-bridge`, `volva-compat`, `volva-core`, and `volva-tools`.
 

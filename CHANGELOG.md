@@ -4,10 +4,16 @@ All notable changes to Volva are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-09
+
 ### Changed
 
-- **Changelog bootstrap**: Release headings and entry structure now follow the
-  shared ecosystem changelog template.
+- **Release profile tuning**: Volva now carries explicit dev and release
+  profile settings for smaller release artifacts and better debug info in local
+  development builds.
+- **Docs structure**: The docs set now includes a central `docs/README.md`
+  with lowercase architecture, boundary-audit, hook-adapter, and backend-plan
+  references.
 
 ## [0.1.2] - 2026-04-08
 
