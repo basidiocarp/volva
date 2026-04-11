@@ -13,6 +13,16 @@ The current host model is session-first. `volva-core` owns the typed session and
 
 `volva-cli` builds those identities for `run` and `chat`. `volva-runtime` threads the same identity through request validation, prompt assembly, hook payloads, and a persisted host-session snapshot under Volva's vendor directory. `backend session` reads that last persisted snapshot instead of inventing a new session id on inspection. That keeps the host boundary explicit instead of rebuilding session state in multiple places.
 
+That persisted host-session surface is the first producer for Septa's `workflow-participant-runtime-identity-v1` contract when Volva is linked to a workflow-backed task. The `volva` side of the mapping is:
+
+- `workflow_id`: the task or workflow scope Volva is running under
+- `participant_id`: the primary execution participant identity
+- `runtime_session_id`: Volva's execution session id
+- `project_root` and `worktree_id`: the scoped workspace binding
+- `host_ref` and `backend_ref`: the execution host and concrete backend choice
+
+Volva should keep producing those fields from its typed runtime/session model instead of rebuilding them in downstream tools. Sessions without a linked workflow can keep using Volva's native session surface without claiming this Septa contract.
+
 ## Current Flow
 
 1. `volva-cli` loads config and resolves the current workspace root.
