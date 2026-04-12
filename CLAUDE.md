@@ -138,6 +138,16 @@ Current payload shape:
 
 The supported external adapter path today is the Cortina hook-event surface, typically configured as `cortina adapter volva hook-event`.
 
+### Contract Validation
+
+When changing the hook payload shape, validate the fixture against the canonical schema:
+
+```bash
+cd ../septa && bash validate-all.sh
+```
+
+The relevant schema is `volva-hook-event-v1`. Update the septa schema and fixture first, then change the runtime code.
+
 ---
 
 ## Auth Flow

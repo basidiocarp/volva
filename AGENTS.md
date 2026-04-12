@@ -75,6 +75,7 @@ Current direction:
 - Prefer extending shared runtime helpers over adding backend-specific branches in multiple crates.
 - Do not hand-edit generated output or vendor artifacts.
 - Run the narrowest relevant `cargo test` plus `cargo fmt` or `cargo clippy` when behavior changes.
+- Validate septa contracts after changing any cross-project payload: `cd septa && bash validate-all.sh`
 
 ---
 
