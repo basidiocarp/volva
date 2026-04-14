@@ -22,9 +22,11 @@ Volva keeps the host boundary in one place. It chooses the backend, shapes the p
 
 | Tool | Purpose |
 |------|---------|
+| **[annulus](https://github.com/basidiocarp/annulus)** | Cross-ecosystem operator utilities |
 | **[volva](https://github.com/basidiocarp/volva)** | Execution-host runtime layer |
 | **[mycelium](https://github.com/basidiocarp/mycelium)** | Token-optimized command output |
 | **[hyphae](https://github.com/basidiocarp/hyphae)** | Persistent agent memory |
+| **[hymenium](https://github.com/basidiocarp/hymenium)** | Workflow orchestration engine |
 | **[rhizome](https://github.com/basidiocarp/rhizome)** | Code intelligence via tree-sitter and LSP |
 | **[canopy](https://github.com/basidiocarp/canopy)** | Multi-agent coordination runtime |
 | **[cortina](https://github.com/basidiocarp/cortina)** | Lifecycle signal capture and session attribution |
@@ -32,7 +34,7 @@ Volva keeps the host boundary in one place. It chooses the backend, shapes the p
 | **[spore](https://github.com/basidiocarp/spore)** | Shared transport and editor primitives |
 | **[stipe](https://github.com/basidiocarp/stipe)** | Ecosystem installer and manager |
 
-> **Boundary:** `volva` owns execution-host orchestration. `hyphae` owns memory, `rhizome` owns code intelligence, `cortina` owns lifecycle capture, `canopy` owns coordination, and `stipe` owns install and repair policy.
+> **Boundary:** `volva` owns execution-host orchestration. `hyphae` owns memory, `rhizome` owns code intelligence, `cortina` owns lifecycle capture, `canopy` owns coordination, `hymenium` owns workflow orchestration, `annulus` owns operator utilities, and `stipe` owns install and repair policy.
 
 ---
 

@@ -36,6 +36,11 @@ Keep that distinction explicit when updating docs or planning work. The support 
 - Do not treat the support crates as fuller products than they are today.
 - Do not document a hook surface larger than the runtime actually emits.
 
+## What Volva Does NOT Do
+
+- Does not orchestrate workflows or manage dispatch decisions (Hymenium owns that)
+- Does not provide operator utilities like statuslines (Annulus owns that)
+
 ---
 
 ## Failure Modes
