@@ -4,6 +4,13 @@ All notable changes to Volva are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-14
+
+### Added
+
+- **Release automation**: GitHub release builds now publish cross-platform
+  Volva artifacts so `stipe install volva` can download released binaries.
+
 ## [0.1.3] - 2026-04-09
 
 ### Changed
