@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -135,6 +136,7 @@ pub async fn chat_once(
     chat_once_with_state_observer(config, credential, request, |_| {}).await
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn chat_once_with_state_observer<F>(
     config: &ApiClientConfig,
     credential: &ResolvedCredential,
@@ -281,7 +283,7 @@ fn format_api_error(status: u16, body: &str, headers: &ResponseHeaderSnapshot) -
     let base = if let Ok(error) = serde_json::from_str::<ApiErrorResponse>(body) {
         match status {
             401 => format!("Anthropic authentication failed: {}", error.error.message),
-            429 => format_rate_limit_error(error.error.message, &headers.rate_limits),
+            429 => format_rate_limit_error(&error.error.message, &headers.rate_limits),
             529 => format!("Anthropic is overloaded: {}", error.error.message),
             _ => format!(
                 "Anthropic request failed with {status}: {}",
@@ -337,7 +339,7 @@ fn summarize_rate_limits(snapshot: &RateLimitSnapshot) -> Option<String> {
             summary.push_str(" (request limit exhausted)");
         }
         if let Some(reset) = &snapshot.requests_reset {
-            summary.push_str(&format!(", reset={reset}"));
+            let _ = write!(summary, ", reset={reset}");
         }
         parts.push(summary);
     }
@@ -347,7 +349,7 @@ fn summarize_rate_limits(snapshot: &RateLimitSnapshot) -> Option<String> {
             summary.push_str(" (token limit exhausted)");
         }
         if let Some(reset) = &snapshot.tokens_reset {
-            summary.push_str(&format!(", reset={reset}"));
+            let _ = write!(summary, ", reset={reset}");
         }
         parts.push(summary);
     }
@@ -372,7 +374,7 @@ fn append_response_diagnostics(base: String, headers: &ResponseHeaderSnapshot) -
     }
 }
 
-fn format_rate_limit_error(message: String, snapshot: &RateLimitSnapshot) -> String {
+fn format_rate_limit_error(message: &str, snapshot: &RateLimitSnapshot) -> String {
     if let Some(summary) = summarize_rate_limits(snapshot) {
         return format!("Anthropic rate limit hit: {message}. {summary}");
     }

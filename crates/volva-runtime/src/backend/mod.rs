@@ -32,10 +32,6 @@ impl BackendRunResult {
 pub fn validate_request(request: &BackendRunRequest) -> Result<()> {
     match request.session.backend {
         BackendKind::OfficialCli => Ok(()),
-        BackendKind::AnthropicApi => bail!(
-            "backend `{}` is not available through `volva run` yet; use `volva chat` for the native API path",
-            request.session.backend
-        ),
         _ => bail!(
             "backend `{}` is not available through `volva run` yet; use `volva chat` for the native API path",
             request.session.backend
@@ -54,7 +50,6 @@ pub fn run(
         BackendKind::OfficialCli => {
             official_cli::run(&config.backend.command, request, prepared_prompt)
         }
-        BackendKind::AnthropicApi => unreachable!("validated unsupported run backend"),
         _ => unreachable!("validated unsupported run backend"),
     }
 }
@@ -87,7 +82,10 @@ pub fn session_status_lines(session: &ExecutionSessionIdentity) -> Vec<StatusLin
             "primary_participant",
             session.primary_participant.participant_id.clone(),
         ),
-        StatusLine::new("primary_host_kind", session.primary_participant.host_kind.clone()),
+        StatusLine::new(
+            "primary_host_kind",
+            session.primary_participant.host_kind.clone(),
+        ),
         StatusLine::new("session_state", session.state.to_string()),
     ]
 }

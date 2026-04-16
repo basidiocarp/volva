@@ -164,7 +164,7 @@ pub fn try_open_browser(url: &str, span_context: &SpanContext) -> bool {
         if !launched {
             warn!("failed to launch browser for Anthropic OAuth");
         }
-        return launched;
+        launched
     }
 
     #[cfg(target_os = "macos")]
@@ -180,7 +180,7 @@ pub fn try_open_browser(url: &str, span_context: &SpanContext) -> bool {
         if !launched {
             warn!("failed to launch browser for Anthropic OAuth");
         }
-        return launched;
+        launched
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -196,7 +196,7 @@ pub fn try_open_browser(url: &str, span_context: &SpanContext) -> bool {
         if !launched {
             warn!("failed to launch browser for Anthropic OAuth");
         }
-        return launched;
+        launched
     }
 
     #[cfg(not(any(target_os = "windows", unix)))]

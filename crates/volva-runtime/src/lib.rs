@@ -1,5 +1,6 @@
 mod backend;
 mod context;
+pub mod execenv;
 mod hooks;
 
 use std::fs;
@@ -115,7 +116,10 @@ impl RuntimeBootstrap {
         let path = self.execution_session_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create execution session directory `{}`", parent.display())
+                format!(
+                    "failed to create execution session directory `{}`",
+                    parent.display()
+                )
             })?;
         }
         let payload =

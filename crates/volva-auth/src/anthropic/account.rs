@@ -34,7 +34,7 @@ pub struct FinalizedAnthropicLogin {
 
 pub fn finalize_login(
     target: AuthTarget,
-    token_response: TokenExchangeResponse,
+    token_response: &TokenExchangeResponse,
     api_key: Option<String>,
 ) -> Result<FinalizedAnthropicLogin> {
     if token_response.access_token.is_empty() {
@@ -156,7 +156,7 @@ mod tests {
             ..bearer_response()
         };
 
-        let error = finalize_login(AuthTarget::ClaudeAi, response, None)
+        let error = finalize_login(AuthTarget::ClaudeAi, &response, None)
             .expect_err("missing inference scope should fail");
         assert!(error.to_string().contains("user:inference"));
     }
@@ -168,14 +168,14 @@ mod tests {
             ..bearer_response()
         };
 
-        let error = finalize_login(AuthTarget::Console, response, None)
+        let error = finalize_login(AuthTarget::Console, &response, None)
             .expect_err("missing API key should fail");
         assert!(error.to_string().contains("API key"));
     }
 
     #[test]
     fn finalized_login_carries_metadata_and_mode() {
-        let finalized = finalize_login(AuthTarget::ClaudeAi, bearer_response(), None)
+        let finalized = finalize_login(AuthTarget::ClaudeAi, &bearer_response(), None)
             .expect("bearer login should finalize");
 
         assert_eq!(finalized.result.credential_mode, AuthMode::BearerToken);
@@ -192,7 +192,7 @@ mod tests {
     fn console_login_discards_oauth_bearer_secrets_before_storage() {
         let finalized = finalize_login(
             AuthTarget::Console,
-            TokenExchangeResponse {
+            &TokenExchangeResponse {
                 scope: Some("org:create_api_key user:profile".to_string()),
                 ..bearer_response()
             },

@@ -326,7 +326,8 @@ impl TempIoFile {
                     }
                     return Ok(Self { path });
                 }
-                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+
                 Err(error) => {
                     return Err(error).with_context(|| {
                         format!(
@@ -373,6 +374,7 @@ fn unique_temp_io_path(prefix: &str, attempt: usize) -> PathBuf {
     ))
 }
 
+#[must_use]
 pub fn render_command_line(command: &str, args: &[String]) -> String {
     std::iter::once(render_command_line_part(command))
         .chain(args.iter().map(|arg| render_command_line_part(arg)))
@@ -656,7 +658,9 @@ mod tests {
             HookPhase::BeforePromptSend,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
-                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "summarize the repository".to_string(),
                 prompt_summary: "summarize the repository".to_string(),
@@ -698,7 +702,9 @@ mod tests {
             HookPhase::SessionEnd,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
-                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "headless fail".to_string(),
                 prompt_summary: "headless fail".to_string(),
@@ -737,7 +743,9 @@ mod tests {
             HookPhase::SessionEnd,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
-                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "x".repeat(1024 * 1024),
                 prompt_summary: "headless timeout".to_string(),
@@ -784,7 +792,9 @@ mod tests {
             HookPhase::SessionStart,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
-                execution_session: test_session(&env::current_dir().expect("current dir should be available")),
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
                 cwd: env::current_dir().expect("current dir should be available"),
                 prompt_text: "argv test".to_string(),
                 prompt_summary: "argv test".to_string(),

@@ -129,7 +129,7 @@ impl AnthropicLoginSession {
         };
 
         let FinalizedAnthropicLogin { result, tokens } =
-            account::finalize_login(self.request.target, token_response, api_key)?;
+            account::finalize_login(self.request.target, &token_response, api_key)?;
 
         Ok(AnthropicLoginCompletion { result, tokens })
     }

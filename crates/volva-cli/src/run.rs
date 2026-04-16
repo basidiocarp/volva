@@ -19,6 +19,7 @@ pub struct RunCommand {
     pub prompt: Vec<String>,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_run(command: RunCommand) -> Result<()> {
     let prompt = command.prompt.join(" ").trim().to_string();
     if prompt.is_empty() {
@@ -38,10 +39,7 @@ pub fn handle_run(command: RunCommand) -> Result<()> {
         config.backend.kind,
         ExecutionSessionState::Active,
     );
-    let result = runtime.run_backend(&BackendRunRequest {
-        prompt,
-        session,
-    })?;
+    let result = runtime.run_backend(&BackendRunRequest { prompt, session })?;
 
     if result.success() {
         if !result.stdout.is_empty() {

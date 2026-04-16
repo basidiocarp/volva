@@ -79,6 +79,7 @@ fn handle_login(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_logout(command: LogoutCommand, span_context: &SpanContext) -> Result<()> {
     let _workflow_span = workflow_span("auth_logout", span_context).entered();
     let provider = AuthProvider::from(command.provider);
@@ -87,12 +88,14 @@ fn handle_logout(command: LogoutCommand, span_context: &SpanContext) -> Result<(
     Ok(())
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_status(command: StatusCommand, span_context: &SpanContext) -> Result<()> {
     let _workflow_span = workflow_span("auth_status", span_context).entered();
     let status = auth_status(AuthProvider::Anthropic)?;
     render_status(&status, command.json)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_anthropic_login(
     command: LoginCommand,
     span_context: &SpanContext,
@@ -116,10 +119,7 @@ fn handle_anthropic_login(
     if command.no_browser {
         println!("Browser launch disabled.");
     } else if session.browser_open_attempted() {
-        println!(
-            "Attempted to open your browser for {} authentication.",
-            target
-        );
+        println!("Attempted to open your browser for {target} authentication.");
     } else {
         println!("Automatic browser launch failed. Open the URL below manually.");
     }

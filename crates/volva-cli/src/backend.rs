@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Deserialize;
-use serde_json;
 use spore::logging::{SpanContext, subprocess_span, tool_span};
 
 use volva_config::VolvaConfig;
@@ -56,6 +55,7 @@ impl From<BackendArg> for BackendKind {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_backend(command: BackendCommand) -> Result<()> {
     match command.command {
         BackendSubcommand::Status(StatusSubcommand {}) => {
@@ -126,22 +126,18 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
         .status_lines()
         .into_iter()
         .find(|line| line.label == "hook_adapter")
-        .map(|line| line.value)
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(|| "unknown".to_string(), |line| line.value);
     let hook_adapter_command = hook_adapter_command_line(runtime);
-    let hook_adapter_command_resolved = runtime
-        .config
-        .hook_adapter
-        .enabled
-        .then(|| {
-            runtime
-                .config
-                .hook_adapter
-                .command
-                .as_deref()
-                .is_some_and(command_resolved)
-        })
-        .unwrap_or(true);
+    let hook_adapter_command_resolved = if runtime.config.hook_adapter.enabled {
+        runtime
+            .config
+            .hook_adapter
+            .command
+            .as_deref()
+            .is_some_and(command_resolved)
+    } else {
+        true
+    };
     let local_backend_ready =
         backend_supported_by_run && backend_command_resolved && hook_adapter_command_resolved;
     let hook_delivery_health = collect_hook_delivery_health(runtime, cwd);
@@ -176,8 +172,8 @@ pub(crate) fn render_backend_session(surface: &BackendSessionSurface) -> Vec<Str
 
     lines.extend(
         session_status_lines(&surface.session)
-        .into_iter()
-        .map(|line| format!("{}: {}", line.label, line.value))
+            .into_iter()
+            .map(|line| format!("{}: {}", line.label, line.value)),
     );
 
     lines

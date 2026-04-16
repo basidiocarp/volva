@@ -5,7 +5,6 @@ mod run;
 mod session;
 
 use std::env;
-use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -67,7 +66,7 @@ fn main() -> Result<()> {
         Command::Paths => {
             let root = env::current_dir()?;
             let config = VolvaConfig::load_from(&root)?;
-            print_paths(root, &config);
+            print_paths(&root, &config);
             Ok(())
         }
     }
@@ -98,7 +97,7 @@ fn print_doctor(runtime: &RuntimeBootstrap, cwd: &std::path::Path) {
     }
 }
 
-fn print_paths(root: PathBuf, config: &VolvaConfig) {
+fn print_paths(root: &std::path::Path, config: &VolvaConfig) {
     println!("workspace_root: {}", root.display());
     println!("vendor_dir: {}", config.vendor_dir.display());
     for candidate in import_candidates() {

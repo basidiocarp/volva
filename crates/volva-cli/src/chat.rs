@@ -20,6 +20,7 @@ pub struct ChatCommand {
     pub prompt: Vec<String>,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_chat(command: ChatCommand) -> Result<()> {
     let prompt = command.prompt.join(" ").trim().to_string();
     if prompt.is_empty() {
