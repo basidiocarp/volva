@@ -46,6 +46,11 @@ fn main() -> Result<()> {
             .with_output(LogOutput::Stderr)
             .with_span_events(SpanEvents::Lifecycle),
     );
+    let _telemetry = spore::telemetry::init_tracer("volva")
+        .unwrap_or_else(|e| {
+            tracing::debug!("OTel init skipped: {}", e);
+            spore::telemetry::TelemetryInit::disabled("volva")
+        });
     let span_context = current_span_context();
     let _root_span = root_span(&span_context).entered();
     let cli = Cli::parse();

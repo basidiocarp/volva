@@ -13,6 +13,7 @@ use std::{
 use anyhow::{Context, Result};
 use serde::Serialize;
 use spore::logging::{SpanContext, subprocess_span, tool_span};
+use spore::telemetry::TraceContextCarrier;
 use volva_config::HookAdapterConfig;
 use volva_core::{BackendKind, ExecutionSessionIdentity, ExecutionSessionState};
 
@@ -208,8 +209,8 @@ impl ExternalCommandHookAdapter {
             .context("failed to stage hook adapter stdout capture")?;
         let stderr_file = TempIoFile::new("stderr", None)
             .context("failed to stage hook adapter stderr capture")?;
-        let mut child = Command::new(&self.command.command)
-            .args(&self.command.args)
+        let mut cmd = Command::new(&self.command.command);
+        cmd.args(&self.command.args)
             .current_dir(&event.context.cwd)
             .stdin(
                 stdin_file
@@ -225,8 +226,17 @@ impl ExternalCommandHookAdapter {
                 stderr_file
                     .open_write_stdio()
                     .context("failed to open hook adapter stderr capture")?,
-            )
-            .spawn()
+            );
+
+        // Propagate trace context to hook adapter subprocess
+        if let Some(carrier) = TraceContextCarrier::from_current() {
+            cmd.env("TRACEPARENT", carrier.traceparent);
+            if let Some(tracestate) = carrier.tracestate {
+                cmd.env("TRACESTATE", tracestate);
+            }
+        }
+
+        let mut child = cmd.spawn()
             .with_context(|| {
                 format!("failed to launch hook adapter `{}`", self.command.display())
             })?;

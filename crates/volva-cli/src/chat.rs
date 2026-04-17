@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use spore::logging::{SpanContext, workflow_span};
 use tokio::runtime::Runtime;
+use tracing::info_span;
 use volva_api::{ApiClientConfig, ChatRequest};
 use volva_auth::resolve_credential;
 use volva_config::VolvaConfig;
@@ -40,6 +41,18 @@ pub fn handle_chat(command: ChatCommand) -> Result<()> {
         BackendKind::AnthropicApi,
         ExecutionSessionState::Active,
     );
+
+    let span = info_span!("volva.execution",
+        execution_mode = "chat",
+        backend = tracing::field::Empty,
+        session_id = tracing::field::Empty,
+        workspace_root = tracing::field::Empty,
+    );
+    span.record("backend", format!("{:?}", session.backend));
+    span.record("session_id", session.session_id.to_string());
+    span.record("workspace_root", session.workspace.workspace_root.to_string());
+    let _enter = span.enter();
+
     let span_context = SpanContext::for_app("volva")
         .with_tool("chat")
         .with_session_id(session.session_id.to_string())

@@ -2,6 +2,7 @@ use std::env;
 
 use anyhow::{Result, bail};
 use clap::Args;
+use tracing::info_span;
 
 use volva_config::VolvaConfig;
 use volva_core::{BackendKind, ExecutionMode, ExecutionSessionState};
@@ -39,6 +40,18 @@ pub fn handle_run(command: RunCommand) -> Result<()> {
         config.backend.kind,
         ExecutionSessionState::Active,
     );
+
+    let span = info_span!("volva.execution",
+        execution_mode = "run",
+        backend = tracing::field::Empty,
+        session_id = tracing::field::Empty,
+        workspace_root = tracing::field::Empty,
+    );
+    span.record("backend", format!("{:?}", session.backend));
+    span.record("session_id", session.session_id.to_string());
+    span.record("workspace_root", session.workspace.workspace_root.to_string());
+    let _enter = span.enter();
+
     let result = runtime.run_backend(&BackendRunRequest { prompt, session })?;
 
     if result.success() {

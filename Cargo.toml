@@ -14,7 +14,7 @@ clap = { version = "4.5", features = ["derive"] }
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.4.9" }
+spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.4.11", features = ["otel"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
