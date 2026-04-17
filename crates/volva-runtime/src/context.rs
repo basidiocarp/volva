@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::thread;
@@ -10,12 +11,15 @@ use crate::BackendRunRequest;
 
 const ENVELOPE_HEADER: &str = "[volva-host-context]";
 const MEMORY_PROTOCOL_HEADER: &str = "[hyphae-memory-protocol]";
+const SESSION_RECALL_HEADER: &str = "[hyphae-session-recall]";
 const USER_PROMPT_HEADER: &str = "[user-prompt]";
 const HOST_NOTE: &str = "source: host-provided context from volva";
 const HYPHAE_PROTOCOL_COMMAND: &str = "hyphae";
 const HYPHAE_PROTOCOL_RESOURCE_URI: &str = "hyphae://protocol/current";
 const MEMORY_PROTOCOL_TIMEOUT: Duration = Duration::from_millis(250);
 const MEMORY_PROTOCOL_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const SESSION_RECALL_TIMEOUT: Duration = Duration::from_millis(500);
+const SESSION_RECALL_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedPrompt {
@@ -31,16 +35,33 @@ impl PreparedPrompt {
 
 #[must_use]
 pub fn assemble_prompt(config: &VolvaConfig, request: &BackendRunRequest) -> PreparedPrompt {
-    let memory_protocol =
-        load_memory_protocol_block(request.session.workspace.workspace_root.as_str());
-    assemble_prompt_with_memory_protocol(config, request, memory_protocol.as_deref())
+    let workspace_root = request.session.workspace.workspace_root.as_str();
+    let memory_protocol = load_memory_protocol_block(workspace_root);
+    let session_recall = load_session_recall_block(workspace_root);
+    assemble_prompt_with_memory_and_recall(
+        config,
+        request,
+        memory_protocol.as_deref(),
+        session_recall.as_deref(),
+    )
 }
 
 #[must_use]
+#[cfg(test)]
 pub(crate) fn assemble_prompt_with_memory_protocol(
     config: &VolvaConfig,
     request: &BackendRunRequest,
     memory_protocol: Option<&str>,
+) -> PreparedPrompt {
+    assemble_prompt_with_memory_and_recall(config, request, memory_protocol, None)
+}
+
+#[must_use]
+pub(crate) fn assemble_prompt_with_memory_and_recall(
+    config: &VolvaConfig,
+    request: &BackendRunRequest,
+    memory_protocol: Option<&str>,
+    session_recall: Option<&str>,
 ) -> PreparedPrompt {
     let mut lines = vec![
         ENVELOPE_HEADER.to_string(),
@@ -73,12 +94,24 @@ pub(crate) fn assemble_prompt_with_memory_protocol(
     }
 
     let envelope = lines.join("\n");
-    let final_prompt = match memory_protocol.filter(|block| !block.trim().is_empty()) {
-        Some(block) => format!(
-            "{envelope}\n\n{block}\n\n{USER_PROMPT_HEADER}\n{}",
+
+    // Collect optional context blocks between the envelope and user prompt.
+    let mut extra_blocks = Vec::new();
+    if let Some(block) = memory_protocol.filter(|b| !b.trim().is_empty()) {
+        extra_blocks.push(block.to_string());
+    }
+    if let Some(block) = session_recall.filter(|b| !b.trim().is_empty()) {
+        extra_blocks.push(block.to_string());
+    }
+
+    let final_prompt = if extra_blocks.is_empty() {
+        format!("{envelope}\n\n{USER_PROMPT_HEADER}\n{}", request.prompt)
+    } else {
+        let blocks = extra_blocks.join("\n\n");
+        format!(
+            "{envelope}\n\n{blocks}\n\n{USER_PROMPT_HEADER}\n{}",
             request.prompt
-        ),
-        None => format!("{envelope}\n\n{USER_PROMPT_HEADER}\n{}", request.prompt),
+        )
     };
 
     PreparedPrompt { final_prompt }
@@ -120,6 +153,14 @@ fn load_memory_protocol_block(workspace_root: &str) -> Option<String> {
     load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND)
 }
 
+fn load_session_recall_block(workspace_root: &str) -> Option<String> {
+    let project = Path::new(workspace_root)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(workspace_root);
+    load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, project)
+}
+
 fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
     let mut command = Command::new(command);
     command.arg("protocol");
@@ -152,6 +193,58 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
 
         thread::sleep(MEMORY_PROTOCOL_POLL_INTERVAL);
     }
+}
+
+fn load_session_recall_block_from_command(command: &str, project: &str) -> Option<String> {
+    let mut child = Command::new(command)
+        .args([
+            "session",
+            "context",
+            "--project",
+            project,
+            "--limit",
+            &SESSION_RECALL_LIMIT.to_string(),
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().ok()? {
+            if !status.success() {
+                return None;
+            }
+            let output = child.wait_with_output().ok()?;
+            let stdout = String::from_utf8(output.stdout).ok()?;
+            let trimmed = stdout.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            return Some(format_session_recall_block(project, trimmed));
+        }
+
+        if start.elapsed() >= SESSION_RECALL_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+
+        thread::sleep(MEMORY_PROTOCOL_POLL_INTERVAL);
+    }
+}
+
+fn format_session_recall_block(project: &str, raw_output: &str) -> String {
+    let mut lines = vec![
+        SESSION_RECALL_HEADER.to_string(),
+        format!("project: {project}"),
+    ];
+    for line in raw_output.lines() {
+        lines.push(line.to_string());
+    }
+    lines.join("\n")
 }
 
 fn format_memory_protocol_block(surface: &MemoryProtocolSurface) -> String {
@@ -191,6 +284,7 @@ fn format_memory_protocol_block(surface: &MemoryProtocolSurface) -> String {
 mod tests {
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use volva_config::VolvaConfig;
@@ -201,7 +295,17 @@ mod tests {
 
     use crate::BackendRunRequest;
 
-    use super::{assemble_prompt_with_memory_protocol, format_memory_protocol_block};
+    use super::{
+        assemble_prompt_with_memory_and_recall, assemble_prompt_with_memory_protocol,
+        format_memory_protocol_block,
+    };
+
+    // Shell-subprocess tests must not run concurrently: parallel spawns on macOS
+    // can exhaust the 250 ms / 500 ms timeouts embedded in the production poll loop.
+    // Acquire this lock at the top of every test that calls a `load_*_from_command`
+    // helper via a real shell script.
+    #[cfg(unix)]
+    static SHELL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[cfg(unix)]
     fn unique_temp_path(label: &str) -> PathBuf {
@@ -370,6 +474,8 @@ summarize the repository"
     #[cfg(unix)]
     #[test]
     fn load_memory_protocol_block_from_command_reads_runtime_surface() {
+        let _lock = SHELL_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
         let command = write_test_command(
             "success",
             "test \"$1\" = \"protocol\"\nprintf '%s' '{\"schema_version\":\"1.0\",\"summary\":\"Recall selectively at task start.\",\"recall\":{\"tools\":[\"hyphae_gather_context\",\"hyphae_memory_recall\"],\"passive_resource_uri\":\"hyphae://context/current\"},\"store\":{\"tool\":\"hyphae_memory_store\",\"project_topics\":[\"context/{project}\",\"decisions/{project}\"]},\"resources\":[{\"uri\":\"hyphae://protocol/current\"}]}'",
@@ -384,5 +490,97 @@ summarize the repository"
         assert!(protocol.contains("protocol_resource: hyphae://protocol/current"));
 
         let _ = fs::remove_file(command);
+    }
+
+    #[test]
+    fn format_session_recall_block_produces_correct_output() {
+        let block = super::format_session_recall_block(
+            "myproject",
+            "ses_abc [completed] project_root=/tmp/myproject -> did some work\nses_def [active] project_root=/tmp/myproject -> in progress",
+        );
+
+        assert!(block.starts_with("[hyphae-session-recall]"));
+        assert!(block.contains("project: myproject"));
+        assert!(block.contains("ses_abc [completed]"));
+        assert!(block.contains("ses_def [active]"));
+    }
+
+    #[test]
+    fn load_session_recall_block_from_command_returns_none_for_nonexistent_command() {
+        // A command that does not exist should fail to spawn and return None gracefully.
+        let block = super::load_session_recall_block_from_command(
+            "/nonexistent/hyphae-test-binary",
+            "myproject",
+        );
+
+        assert!(block.is_none(), "missing command should produce None");
+    }
+
+    #[test]
+    fn assemble_prompt_includes_both_protocol_and_recall_blocks() {
+        let config = VolvaConfig::default();
+        let request = BackendRunRequest {
+            prompt: "do work".to_string(),
+            session: ExecutionSessionIdentity {
+                session_id: ExecutionSessionId("volva-run-test".to_string()),
+                mode: ExecutionMode::Run,
+                backend: BackendKind::OfficialCli,
+                workspace: WorkspaceBinding::from_root("/tmp/project"),
+                primary_participant: ExecutionParticipantIdentity {
+                    participant_id: "operator@volva".to_string(),
+                    host_kind: "volva".to_string(),
+                },
+                state: ExecutionSessionState::Active,
+            },
+        };
+        let protocol = "[hyphae-memory-protocol]\nsummary: test protocol";
+        let recall = "[hyphae-session-recall]\nproject: project\nses_abc [completed] -> did work";
+
+        let prepared = assemble_prompt_with_memory_and_recall(
+            &config,
+            &request,
+            Some(protocol),
+            Some(recall),
+        );
+
+        let text = prepared.final_prompt();
+        assert!(text.contains(protocol));
+        assert!(text.contains(recall));
+        assert!(text.contains("\n\n[user-prompt]\n"));
+        // Protocol block should appear before recall block
+        let protocol_pos = text.find(protocol).expect("protocol block must be present");
+        let recall_pos = text.find(recall).expect("recall block must be present");
+        assert!(
+            protocol_pos < recall_pos,
+            "protocol block should precede recall block"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_with_recall_only_omits_protocol_block() {
+        let config = VolvaConfig::default();
+        let request = BackendRunRequest {
+            prompt: "do work".to_string(),
+            session: ExecutionSessionIdentity {
+                session_id: ExecutionSessionId("volva-run-test".to_string()),
+                mode: ExecutionMode::Run,
+                backend: BackendKind::OfficialCli,
+                workspace: WorkspaceBinding::from_root("/tmp/project"),
+                primary_participant: ExecutionParticipantIdentity {
+                    participant_id: "operator@volva".to_string(),
+                    host_kind: "volva".to_string(),
+                },
+                state: ExecutionSessionState::Active,
+            },
+        };
+        let recall = "[hyphae-session-recall]\nproject: project\nses_abc [completed] -> did work";
+
+        let prepared =
+            assemble_prompt_with_memory_and_recall(&config, &request, None, Some(recall));
+
+        let text = prepared.final_prompt();
+        assert!(text.contains(recall));
+        assert!(!text.contains("[hyphae-memory-protocol]"));
+        assert!(text.contains("\n\n[user-prompt]\n"));
     }
 }

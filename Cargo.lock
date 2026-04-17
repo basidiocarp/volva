@@ -1961,11 +1961,11 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "volva-adapters"
-version = "0.2.1"
+version = "0.2.2"
 
 [[package]]
 name = "volva-api"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "volva-auth"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -1999,11 +1999,11 @@ dependencies = [
 
 [[package]]
 name = "volva-bridge"
-version = "0.2.1"
+version = "0.2.2"
 
 [[package]]
 name = "volva-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2023,14 +2023,14 @@ dependencies = [
 
 [[package]]
 name = "volva-compat"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "volva-config"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "volva-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "uuid",
@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "volva-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "volva-tools"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "volva-core",
 ]
