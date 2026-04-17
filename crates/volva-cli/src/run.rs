@@ -47,9 +47,9 @@ pub fn handle_run(command: RunCommand) -> Result<()> {
         session_id = tracing::field::Empty,
         workspace_root = tracing::field::Empty,
     );
-    span.record("backend", format!("{:?}", session.backend));
+    span.record("backend", session.backend.to_string());
     span.record("session_id", session.session_id.to_string());
-    span.record("workspace_root", session.workspace.workspace_root.to_string());
+    span.record("workspace_root", session.workspace.workspace_root.clone());
     let _enter = span.enter();
 
     let result = runtime.run_backend(&BackendRunRequest { prompt, session })?;

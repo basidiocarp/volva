@@ -1809,6 +1809,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-log"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
+dependencies = [
+ "log",
+ "once_cell",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-opentelemetry"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ac28f2d093c6c477eaa76b23525478f38de514fa9aeb1285738d4b97a9552fc"
+dependencies = [
+ "js-sys",
+ "opentelemetry",
+ "smallvec",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-subscriber",
+ "web-time",
+]
+
+[[package]]
 name = "tracing-serde"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,9 +1858,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
+ "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
+ "tracing-log",
  "tracing-serde",
 ]
 
@@ -2007,11 +2036,14 @@ version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
+ "opentelemetry",
  "serde",
  "serde_json",
  "spore",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "uuid",
  "volva-api",
  "volva-auth",

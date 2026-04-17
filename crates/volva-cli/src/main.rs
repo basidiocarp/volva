@@ -8,8 +8,10 @@ use std::env;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use opentelemetry::global;
 use spore::logging::{LogOutput, LoggingConfig, SpanContext, SpanEvents, root_span, workflow_span};
 use tracing::Level;
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 use volva_compat::import_candidates;
 use volva_config::VolvaConfig;
 use volva_runtime::RuntimeBootstrap;
@@ -40,20 +42,98 @@ enum Command {
     Paths,
 }
 
+/// Initialize logging with both fmt and OpenTelemetry layers.
+/// This ensures tracing spans are bridged into the OpenTelemetry context.
+fn init_logging_with_otel(config: LoggingConfig) -> Result<()> {
+    use std::io;
+    use tracing_subscriber::fmt;
+
+    let filter = resolve_logging_filter(&config);
+    let fmt_layer = fmt::layer()
+        .compact()
+        .with_writer(io::stderr)
+        .with_span_events(map_span_events(config.span_events))
+        .with_target(config.include_target);
+
+    let tracer = global::tracer("volva");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(otel_layer);
+
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|e| anyhow::anyhow!("failed to initialize tracing subscriber: {}", e))?;
+
+    Ok(())
+}
+
+fn resolve_logging_filter(config: &LoggingConfig) -> LevelFilter {
+    let env_var_name = config
+        .env_var
+        .clone()
+        .or_else(|| {
+            config.app_name.as_deref().map(|name| {
+                let normalized = name
+                    .chars()
+                    .map(|ch| {
+                        if ch.is_ascii_alphanumeric() {
+                            ch.to_ascii_uppercase()
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect::<String>();
+                format!("{normalized}_LOG")
+            })
+        });
+
+    let level_str = env_var_name
+        .and_then(|name| std::env::var(&name).ok())
+        .or_else(|| std::env::var("RUST_LOG").ok())
+        .unwrap_or_else(|| config.default_level.to_string().to_ascii_lowercase());
+
+    match level_str.as_str() {
+        "trace" => LevelFilter::TRACE,
+        "debug" => LevelFilter::DEBUG,
+        "info" => LevelFilter::INFO,
+        "warn" => LevelFilter::WARN,
+        "error" => LevelFilter::ERROR,
+        _ => config.default_level.as_str().parse().unwrap_or(LevelFilter::WARN),
+    }
+}
+
+fn map_span_events(events: SpanEvents) -> tracing_subscriber::fmt::format::FmtSpan {
+    use tracing_subscriber::fmt::format::FmtSpan;
+    match events {
+        SpanEvents::Off => FmtSpan::NONE,
+        SpanEvents::Lifecycle => FmtSpan::NEW | FmtSpan::CLOSE,
+        SpanEvents::Full => FmtSpan::FULL,
+    }
+}
+
 fn main() -> Result<()> {
-    spore::logging::init_with_config(
-        LoggingConfig::for_app("volva", Level::WARN)
-            .with_output(LogOutput::Stderr)
-            .with_span_events(SpanEvents::Lifecycle),
-    );
+    // Initialize OpenTelemetry first so we can add its layer to the subscriber.
     // NOTE: TelemetryInit has no Drop/flush. Span data survives because spore currently uses
     // SimpleSpanExporter (synchronous, per-span). If the exporter is changed to a batch pipeline,
     // add provider.force_flush() + provider.shutdown() before process exit.
     let _telemetry = spore::telemetry::init_tracer("volva")
         .unwrap_or_else(|e| {
-            tracing::debug!("OTel init skipped: {}", e);
+            tracing::warn!("OTel init skipped: {}", e);
             spore::telemetry::TelemetryInit::disabled("volva")
         });
+
+    // Initialize logging with OpenTelemetry layer if telemetry is enabled.
+    let logging_config = LoggingConfig::for_app("volva", Level::WARN)
+        .with_output(LogOutput::Stderr)
+        .with_span_events(SpanEvents::Lifecycle);
+
+    if _telemetry.enabled {
+        init_logging_with_otel(logging_config)?;
+    } else {
+        spore::logging::init_with_config(logging_config);
+    }
     let span_context = current_span_context();
     let _root_span = root_span(&span_context).entered();
     let cli = Cli::parse();
