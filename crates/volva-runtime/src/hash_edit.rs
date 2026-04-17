@@ -1,5 +1,5 @@
 use std::hash::Hasher;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::path::Path;
 use twox_hash::XxHash32;
 
@@ -30,7 +30,7 @@ pub enum StalenessError {
     Io(#[from] io::Error),
 }
 
-/// An edit proposal: replace lines start..=end with new_content.
+/// An edit proposal: replace lines `start_line..=end_line` with `new_content`.
 /// Line numbers are 1-based. `anchor_hashes` are the expected xxHash32
 /// values of the target lines — used for staleness verification.
 #[derive(Debug, Clone)]
@@ -38,12 +38,17 @@ pub struct EditProposal {
     pub start_line: u32,
     pub end_line: u32,
     pub new_content: String,
-    /// Expected hashes for lines start_line..=end_line at read time.
+    /// Expected hashes for lines `start_line..=end_line` at read time.
     pub anchor_hashes: Vec<u32>,
 }
 
 /// Compute the xxHash32 fingerprint of a line (not including the trailing newline).
+///
+/// `XxHash32::finish()` returns a u64 whose upper 32 bits are always zero by
+/// construction (`XxHash32` is a 32-bit algorithm exposed through the 64-bit
+/// `Hasher` trait). The truncating cast here is intentional.
 #[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn hash_line(content: &str) -> u32 {
     let mut hasher = XxHash32::with_seed(0);
     hasher.write(content.as_bytes());
@@ -62,7 +67,7 @@ pub fn read_with_hashes(path: &Path) -> Result<Vec<TaggedLine>, StalenessError> 
         let content = line?;
         let hash = hash_line(&content);
         tagged.push(TaggedLine {
-            line_number: (idx + 1) as u32,
+            line_number: u32::try_from(idx + 1).unwrap_or(u32::MAX),
             hash,
             content,
         });
@@ -82,7 +87,7 @@ pub fn read_chunk_with_hashes(
     let reader = io::BufReader::new(file);
     let mut tagged = Vec::new();
     for (idx, line) in reader.lines().enumerate() {
-        let line_num = (idx + 1) as u32;
+        let line_num = u32::try_from(idx + 1).unwrap_or(u32::MAX);
         if line_num < start_line {
             let _ = line?; // advance but discard
             continue;
@@ -111,10 +116,10 @@ pub fn check_staleness(
         return Ok(()); // no anchors — skip check
     }
     let current = read_with_hashes(path)?;
-    let file_lines = current.len() as u32;
+    let file_lines = u32::try_from(current.len()).unwrap_or(u32::MAX);
 
     for (i, &expected_hash) in proposal.anchor_hashes.iter().enumerate() {
-        let line_num = proposal.start_line + i as u32;
+        let line_num = proposal.start_line + u32::try_from(i).unwrap_or(u32::MAX);
         match current.get((line_num - 1) as usize) {
             None => {
                 return Err(StalenessError::LineMissing {
@@ -162,9 +167,8 @@ pub fn write_with_staleness_check(
     // Write atomically via tempfile
     let dir = path.parent().unwrap_or(Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(StalenessError::Io)?;
-    use std::io::Write;
     for line in &output_lines {
-        writeln!(tmp, "{}", line).map_err(StalenessError::Io)?;
+        writeln!(tmp, "{line}").map_err(StalenessError::Io)?;
     }
     tmp.persist(path)
         .map_err(|e| StalenessError::Io(e.error))?;
@@ -246,5 +250,33 @@ mod tests {
         write_with_staleness_check(f.path(), &proposal).unwrap();
         let result = read_with_hashes(f.path()).unwrap();
         assert_eq!(result[1].content, "REPLACED");
+    }
+
+    #[test]
+    fn staleness_check_fails_for_line_missing() {
+        let f = write_temp_file("alpha\nbeta\n");
+        let tagged = read_with_hashes(f.path()).unwrap();
+        // Anchor references line 3 which doesn't exist
+        let proposal = EditProposal {
+            start_line: 3,
+            end_line: 3,
+            new_content: "EXTRA".to_string(),
+            anchor_hashes: vec![tagged[0].hash],
+        };
+        assert!(matches!(
+            check_staleness(f.path(), &proposal),
+            Err(StalenessError::LineMissing { line_number: 3, file_lines: 2 })
+        ));
+    }
+
+    #[test]
+    fn read_chunk_with_hashes_returns_subset() {
+        let f = write_temp_file("one\ntwo\nthree\nfour\nfive\n");
+        let chunk = read_chunk_with_hashes(f.path(), 2, 4).unwrap();
+        assert_eq!(chunk.len(), 3);
+        assert_eq!(chunk[0].line_number, 2);
+        assert_eq!(chunk[0].content, "two");
+        assert_eq!(chunk[2].line_number, 4);
+        assert_eq!(chunk[2].content, "four");
     }
 }
