@@ -46,6 +46,9 @@ fn main() -> Result<()> {
             .with_output(LogOutput::Stderr)
             .with_span_events(SpanEvents::Lifecycle),
     );
+    // NOTE: TelemetryInit has no Drop/flush. Span data survives because spore currently uses
+    // SimpleSpanExporter (synchronous, per-span). If the exporter is changed to a batch pipeline,
+    // add provider.force_flush() + provider.shutdown() before process exit.
     let _telemetry = spore::telemetry::init_tracer("volva")
         .unwrap_or_else(|e| {
             tracing::debug!("OTel init skipped: {}", e);

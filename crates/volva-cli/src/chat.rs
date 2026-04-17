@@ -2,7 +2,6 @@ use std::env;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use spore::logging::{SpanContext, workflow_span};
 use tokio::runtime::Runtime;
 use tracing::info_span;
 use volva_api::{ApiClientConfig, ChatRequest};
@@ -52,12 +51,6 @@ pub fn handle_chat(command: ChatCommand) -> Result<()> {
     span.record("session_id", session.session_id.to_string());
     span.record("workspace_root", session.workspace.workspace_root.to_string());
     let _enter = span.enter();
-
-    let span_context = SpanContext::for_app("volva")
-        .with_tool("chat")
-        .with_session_id(session.session_id.to_string())
-        .with_workspace_root(session.workspace.workspace_root.clone());
-    let _workflow_span = workflow_span("chat", &span_context).entered();
     let api_config = ApiClientConfig {
         base_url: config.api_base_url,
         model: config.model,
