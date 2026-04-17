@@ -2,6 +2,7 @@ mod backend;
 mod context;
 pub mod execenv;
 mod hooks;
+pub mod hash_edit;
 
 use std::fs;
 use std::path::PathBuf;

@@ -11,6 +11,9 @@ serde.workspace = true
 serde_json.workspace = true
 spore.workspace = true
 tracing.workspace = true
+tempfile = "3"
+thiserror = "1"
+twox-hash = "1"
 volva-adapters = { path = "../volva-adapters" }
 volva-auth = { path = "../volva-auth" }
 volva-bridge = { path = "../volva-bridge" }
