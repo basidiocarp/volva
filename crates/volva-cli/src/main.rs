@@ -44,11 +44,11 @@ enum Command {
 
 /// Initialize logging with both fmt and OpenTelemetry layers.
 /// This ensures tracing spans are bridged into the OpenTelemetry context.
-fn init_logging_with_otel(config: LoggingConfig) -> Result<()> {
+fn init_logging_with_otel(config: &LoggingConfig) -> Result<()> {
     use std::io;
     use tracing_subscriber::fmt;
 
-    let filter = resolve_logging_filter(&config);
+    let filter = resolve_logging_filter(config);
     let fmt_layer = fmt::layer()
         .compact()
         .with_writer(io::stderr)
@@ -64,7 +64,7 @@ fn init_logging_with_otel(config: LoggingConfig) -> Result<()> {
         .with(otel_layer);
 
     tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| anyhow::anyhow!("failed to initialize tracing subscriber: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("failed to initialize tracing subscriber: {e}"))?;
 
     Ok(())
 }
@@ -118,7 +118,7 @@ fn main() -> Result<()> {
     // NOTE: TelemetryInit has no Drop/flush. Span data survives because spore currently uses
     // SimpleSpanExporter (synchronous, per-span). If the exporter is changed to a batch pipeline,
     // add provider.force_flush() + provider.shutdown() before process exit.
-    let _telemetry = spore::telemetry::init_tracer("volva")
+    let telemetry = spore::telemetry::init_tracer("volva")
         .unwrap_or_else(|e| {
             tracing::warn!("OTel init skipped: {}", e);
             spore::telemetry::TelemetryInit::disabled("volva")
@@ -129,8 +129,8 @@ fn main() -> Result<()> {
         .with_output(LogOutput::Stderr)
         .with_span_events(SpanEvents::Lifecycle);
 
-    if _telemetry.enabled {
-        init_logging_with_otel(logging_config)?;
+    if telemetry.enabled {
+        init_logging_with_otel(&logging_config)?;
     } else {
         spore::logging::init_with_config(logging_config);
     }
