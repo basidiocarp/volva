@@ -10,6 +10,10 @@ use tracing::warn;
 use url::Url;
 use volva_core::AuthTarget;
 
+/// Maximum total size of HTTP headers accepted from the OAuth callback client.
+/// Requests exceeding this limit are treated as malformed and retried.
+const MAX_HEADER_BYTES: usize = 8 * 1024;
+
 use super::oauth;
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:0";
@@ -83,7 +87,8 @@ impl CallbackServer {
                 .await
                 .context("failed to read Anthropic OAuth callback request")?;
 
-            loop {
+            let mut header_bytes_read: usize = 0;
+            let header_too_large = loop {
                 let mut header_line = String::new();
                 reader
                     .read_line(&mut header_line)
@@ -91,8 +96,22 @@ impl CallbackServer {
                     .await
                     .context("failed to read Anthropic OAuth callback headers")?;
                 if header_line.trim().is_empty() {
-                    break;
+                    break false;
                 }
+                header_bytes_read = header_bytes_read.saturating_add(header_line.len());
+                if header_bytes_read > MAX_HEADER_BYTES {
+                    break true;
+                }
+            };
+            if header_too_large {
+                warn!("Anthropic OAuth callback request exceeded header size limit; rejecting");
+                write_browser_response(
+                    &mut writer,
+                    self.target,
+                    &Err(anyhow!("request headers too large")),
+                )
+                .await?;
+                continue;
             }
 
             let callback_attempt = {

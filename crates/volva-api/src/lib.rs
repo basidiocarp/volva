@@ -124,7 +124,7 @@ pub fn auth_header_kind(credential: &ResolvedCredential) -> &'static str {
     match credential.mode {
         AuthMode::ApiKey => "x-api-key",
         AuthMode::BearerToken => "authorization",
-        _ => unreachable!("unsupported auth mode: {}", credential.mode),
+        _ => "authorization",
     }
 }
 

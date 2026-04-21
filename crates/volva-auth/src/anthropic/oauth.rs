@@ -250,7 +250,14 @@ fn anthropic_target_config(target: AuthTarget) -> AnthropicTargetConfig {
             success_url: CONSOLE_SUCCESS_URL,
             scopes: CONSOLE_SCOPES,
         },
-        _ => unreachable!("unsupported Anthropic auth target: {target}"),
+        // Unknown future targets: fall back to the claude.ai config so the
+        // caller gets a valid URL rather than a crash.  Callers that need exact
+        // per-target behaviour should be updated to handle new variants.
+        _ => AnthropicTargetConfig {
+            authorize_url: CLAUDE_AI_AUTHORIZE_URL,
+            success_url: CLAUDEAI_SUCCESS_URL,
+            scopes: CLAUDE_AI_SCOPES,
+        },
     }
 }
 

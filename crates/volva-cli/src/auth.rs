@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use spore::logging::{SpanContext, workflow_span};
 use tokio::runtime::Runtime;
@@ -75,7 +75,7 @@ fn handle_login(
     let provider = AuthProvider::from(command.provider);
     match provider {
         AuthProvider::Anthropic => handle_anthropic_login(command, span_context, correlation_id),
-        _ => unreachable!("unsupported auth provider"),
+        _ => bail!("auth provider `{provider}` is not supported by this build"),
     }
 }
 

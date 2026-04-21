@@ -50,7 +50,10 @@ pub fn run(
         BackendKind::OfficialCli => {
             official_cli::run(&config.backend.command, request, prepared_prompt)
         }
-        _ => unreachable!("validated unsupported run backend"),
+        _ => bail!(
+            "backend `{}` is not supported by this run path",
+            request.session.backend
+        ),
     }
 }
 

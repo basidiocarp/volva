@@ -9,7 +9,9 @@ use crate::types::StoredAnthropicTokens;
 
 #[must_use]
 pub fn config_dir() -> PathBuf {
-    home_dir().join(".volva")
+    // config_dir is used for informational display; fall back to a placeholder
+    // path when home_dir is unavailable rather than silently using CWD.
+    home_dir_or_placeholder().join(".volva")
 }
 
 #[must_use]
@@ -19,7 +21,9 @@ pub fn auth_dir() -> PathBuf {
 
 #[must_use]
 pub fn provider_tokens_path(provider: AuthProvider) -> PathBuf {
-    provider_tokens_path_from_base(&home_dir(), provider)
+    // This infallible variant is kept for callers that only need the expected
+    // path for display purposes.  I/O operations use provider_tokens_path_required.
+    provider_tokens_path_from_base(&home_dir_or_placeholder(), provider)
 }
 
 #[must_use]
@@ -30,8 +34,13 @@ pub(crate) fn provider_tokens_path_from_base(base_dir: &Path, provider: AuthProv
         .join(provider_filename(provider))
 }
 
+fn provider_tokens_path_required(provider: AuthProvider) -> Result<PathBuf> {
+    let home = require_home_dir()?;
+    Ok(provider_tokens_path_from_base(&home, provider))
+}
+
 pub fn load_tokens(provider: AuthProvider) -> Result<Option<StoredAnthropicTokens>> {
-    let path = provider_tokens_path(provider);
+    let path = provider_tokens_path_required(provider)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -42,7 +51,7 @@ pub fn load_tokens(provider: AuthProvider) -> Result<Option<StoredAnthropicToken
 }
 
 pub fn save_tokens(provider: AuthProvider, tokens: &StoredAnthropicTokens) -> Result<PathBuf> {
-    let path = provider_tokens_path(provider);
+    let path = provider_tokens_path_required(provider)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -53,21 +62,37 @@ pub fn save_tokens(provider: AuthProvider, tokens: &StoredAnthropicTokens) -> Re
 }
 
 pub fn clear_tokens(provider: AuthProvider) -> Result<()> {
-    let path = provider_tokens_path(provider);
+    let path = provider_tokens_path_required(provider)?;
     if path.exists() {
         fs::remove_file(path)?;
     }
     Ok(())
 }
 
-fn home_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+/// Returns the user's home directory, or an error if it cannot be determined.
+/// Used by I/O operations that must not fall back to CWD.
+fn require_home_dir() -> Result<PathBuf> {
+    dirs::home_dir().context(
+        "could not determine the home directory; \
+         auth token operations require a valid home directory",
+    )
+}
+
+/// Returns the user's home directory, or a placeholder path that cannot
+/// accidentally match a real CWD.  Used only for display/path-construction
+/// callers that do not perform I/O.
+fn home_dir_or_placeholder() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| {
+        // Use an unmistakable placeholder so the path is never silently written
+        // to the current working directory.
+        PathBuf::from("<home-unavailable>")
+    })
 }
 
 fn provider_filename(provider: AuthProvider) -> &'static str {
     match provider {
         AuthProvider::Anthropic => "anthropic.json",
-        _ => unreachable!("unsupported auth provider"),
+        _ => "unknown-provider.json",
     }
 }
 

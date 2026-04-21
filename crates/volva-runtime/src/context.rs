@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
@@ -5,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+use tracing::warn;
 use volva_config::VolvaConfig;
 
 use crate::BackendRunRequest;
@@ -172,22 +174,40 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
         .spawn()
         .ok()?;
 
+    // Take stdout now so we can read it after try_wait() confirms exit.
+    // This avoids the double-wait bug: try_wait() reaps the exit status, then
+    // wait_with_output() would attempt a second wait on an already-reaped child.
+    let mut stdout_handle = child.stdout.take()?;
+
     let start = Instant::now();
     loop {
-        if let Some(status) = child.try_wait().ok()? {
-            if !status.success() {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                // Read stdout using the handle we took before the poll loop.
+                // The child has already exited so this will not block.
+                let mut stdout_bytes = Vec::new();
+                stdout_handle.read_to_end(&mut stdout_bytes).ok()?;
+                let stdout = String::from_utf8(stdout_bytes).ok()?;
+                let surface =
+                    serde_json::from_str::<MemoryProtocolSurface>(stdout.trim()).ok()?;
+                return Some(format_memory_protocol_block(&surface));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(error = %err, "try_wait failed while polling memory protocol child");
                 return None;
             }
-
-            let output = child.wait_with_output().ok()?;
-            let stdout = String::from_utf8(output.stdout).ok()?;
-            let surface = serde_json::from_str::<MemoryProtocolSurface>(stdout.trim()).ok()?;
-            return Some(format_memory_protocol_block(&surface));
         }
 
         if start.elapsed() >= MEMORY_PROTOCOL_TIMEOUT {
             let _ = child.kill();
-            let _ = child.wait();
+            // Reap the child to avoid a zombie; discard the exit status.
+            if let Err(err) = child.wait() {
+                warn!(error = %err, "wait failed after killing memory protocol child");
+            }
             return None;
         }
 
@@ -211,24 +231,40 @@ fn load_session_recall_block_from_command(command: &str, project: &str) -> Optio
         .spawn()
         .ok()?;
 
+    // Take stdout before entering the poll loop for the same reason as above:
+    // try_wait() reaps the exit status; reading via a separate handle avoids
+    // the double-wait that wait_with_output() would cause.
+    let mut stdout_handle = child.stdout.take()?;
+
     let start = Instant::now();
     loop {
-        if let Some(status) = child.try_wait().ok()? {
-            if !status.success() {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                let mut stdout_bytes = Vec::new();
+                stdout_handle.read_to_end(&mut stdout_bytes).ok()?;
+                let stdout = String::from_utf8(stdout_bytes).ok()?;
+                let trimmed = stdout.trim().to_string();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                return Some(format_session_recall_block(project, &trimmed));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(error = %err, "try_wait failed while polling session recall child");
                 return None;
             }
-            let output = child.wait_with_output().ok()?;
-            let stdout = String::from_utf8(output.stdout).ok()?;
-            let trimmed = stdout.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            return Some(format_session_recall_block(project, trimmed));
         }
 
         if start.elapsed() >= SESSION_RECALL_TIMEOUT {
             let _ = child.kill();
-            let _ = child.wait();
+            // Reap the child to avoid a zombie; discard the exit status.
+            if let Err(err) = child.wait() {
+                warn!(error = %err, "wait failed after killing session recall child");
+            }
             return None;
         }
 
