@@ -75,8 +75,11 @@ mod tests {
     #[test]
     fn build_args_uses_print_mode_with_assembled_prompt_payload() {
         let request = test_request("summarize the repo", "/tmp");
-        let prepared =
-            crate::context::assemble_prompt(&VolvaConfig::default(), &request, &request.capabilities);
+        let prepared = crate::context::assemble_prompt(
+            &VolvaConfig::default(),
+            &request,
+            &request.capabilities,
+        );
         let args = build_args(&prepared);
 
         assert_eq!(
@@ -88,8 +91,11 @@ mod tests {
     #[test]
     fn missing_command_returns_launch_error() {
         let request = test_request("hello", "/tmp");
-        let prepared =
-            crate::context::assemble_prompt(&VolvaConfig::default(), &request, &request.capabilities);
+        let prepared = crate::context::assemble_prompt(
+            &VolvaConfig::default(),
+            &request,
+            &request.capabilities,
+        );
         let error = run("/definitely/not/a/real/claude", &request, &prepared)
             .expect_err("missing backend command should fail");
 
@@ -104,8 +110,11 @@ mod tests {
     #[test]
     fn successful_command_captures_stdout_and_exit_code() {
         let request = test_request("headless ok", "/tmp");
-        let prepared =
-            crate::context::assemble_prompt(&VolvaConfig::default(), &request, &request.capabilities);
+        let prepared = crate::context::assemble_prompt(
+            &VolvaConfig::default(),
+            &request,
+            &request.capabilities,
+        );
         let result = run("/bin/echo", &request, &prepared).expect("echo command should run");
 
         assert!(result.stdout.starts_with("-p [volva-host-context]"));
@@ -117,8 +126,11 @@ mod tests {
     #[test]
     fn launched_command_can_exit_nonzero() {
         let request = test_request("headless fail", "/tmp");
-        let prepared =
-            crate::context::assemble_prompt(&VolvaConfig::default(), &request, &request.capabilities);
+        let prepared = crate::context::assemble_prompt(
+            &VolvaConfig::default(),
+            &request,
+            &request.capabilities,
+        );
         let result =
             run("/usr/bin/false", &request, &prepared).expect("false command should launch");
 

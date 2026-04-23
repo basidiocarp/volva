@@ -236,10 +236,9 @@ impl ExternalCommandHookAdapter {
             }
         }
 
-        let mut child = cmd.spawn()
-            .with_context(|| {
-                format!("failed to launch hook adapter `{}`", self.command.display())
-            })?;
+        let mut child = cmd.spawn().with_context(|| {
+            format!("failed to launch hook adapter `{}`", self.command.display())
+        })?;
         let _subprocess_span = subprocess_span(&self.command.command, &span_context).entered();
 
         let start = Instant::now();

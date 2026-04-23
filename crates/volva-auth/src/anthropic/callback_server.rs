@@ -115,7 +115,8 @@ impl CallbackServer {
             }
 
             let callback_attempt = {
-                let _parse_span = workflow_span("anthropic_callback_parse", &span_context).entered();
+                let _parse_span =
+                    workflow_span("anthropic_callback_parse", &span_context).entered();
                 parse_callback(&request_line, expected_state)
             };
 

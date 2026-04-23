@@ -1,8 +1,8 @@
 mod backend;
 pub mod context;
 pub mod execenv;
-mod hooks;
 pub mod hash_edit;
+mod hooks;
 
 use std::fs;
 use std::path::PathBuf;
@@ -331,7 +331,11 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&test_request("headless ok", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "headless ok",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect("echo backend should run");
 
         assert!(result.success());
@@ -360,7 +364,11 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&test_request("show status", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "show status",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect("echo backend should run");
 
         assert!(result.stdout.starts_with("-p [volva-host-context]"));
@@ -376,7 +384,11 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         runtime
-            .run_backend(&test_request("show status", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "show status",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect("echo backend should run");
 
         let before_prompt = runtime
@@ -409,7 +421,11 @@ mod tests {
         let events = adapter.events.clone();
         let runtime = RuntimeBootstrap::with_hook_adapter(config, adapter);
         let result = runtime
-            .run_backend(&test_request("headless adapter", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "headless adapter",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect("echo backend should run");
 
         assert!(result.success());
@@ -439,7 +455,11 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let error = runtime
-            .run_backend(&test_request("headless fail", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "headless fail",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect_err("missing backend command should fail");
 
         let events = runtime.hook_events();
@@ -465,7 +485,11 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&test_request("headless fail", "/tmp", BackendKind::OfficialCli))
+            .run_backend(&test_request(
+                "headless fail",
+                "/tmp",
+                BackendKind::OfficialCli,
+            ))
             .expect("false backend should launch");
 
         assert!(!result.success());
@@ -493,7 +517,11 @@ mod tests {
             RuntimeBootstrap::with_hook_shell(VolvaConfig::default(), HookShell::recording());
 
         let error = runtime
-            .run_backend(&test_request("headless fail", "/tmp", BackendKind::AnthropicApi))
+            .run_backend(&test_request(
+                "headless fail",
+                "/tmp",
+                BackendKind::AnthropicApi,
+            ))
             .expect_err("unsupported backend should fail before hook dispatch");
 
         assert!(

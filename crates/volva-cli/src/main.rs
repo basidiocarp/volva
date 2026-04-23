@@ -13,7 +13,7 @@ use spore::logging::{LogOutput, LoggingConfig, SpanContext, SpanEvents, root_spa
 use tracing::Level;
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 use volva_compat::import_candidates;
-use volva_config::VolvaConfig;
+use volva_config::{GlobalVolvaConfig, VolvaConfig};
 use volva_runtime::RuntimeBootstrap;
 
 use crate::auth::{AuthCommand, handle_auth};
@@ -29,8 +29,8 @@ use volva_core::OperationMode;
     about = "Claude-first runtime shell for Basidiocarp"
 )]
 struct Cli {
-    #[arg(long, value_enum, default_value = "baseline")]
-    pub mode: OperationMode,
+    #[arg(long, value_enum)]
+    pub mode: Option<OperationMode>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -74,24 +74,21 @@ fn init_logging_with_otel(config: &LoggingConfig) -> Result<()> {
 }
 
 fn resolve_logging_filter(config: &LoggingConfig) -> LevelFilter {
-    let env_var_name = config
-        .env_var
-        .clone()
-        .or_else(|| {
-            config.app_name.as_deref().map(|name| {
-                let normalized = name
-                    .chars()
-                    .map(|ch| {
-                        if ch.is_ascii_alphanumeric() {
-                            ch.to_ascii_uppercase()
-                        } else {
-                            '_'
-                        }
-                    })
-                    .collect::<String>();
-                format!("{normalized}_LOG")
-            })
-        });
+    let env_var_name = config.env_var.clone().or_else(|| {
+        config.app_name.as_deref().map(|name| {
+            let normalized = name
+                .chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>();
+            format!("{normalized}_LOG")
+        })
+    });
 
     let level_str = env_var_name
         .and_then(|name| std::env::var(&name).ok())
@@ -104,7 +101,11 @@ fn resolve_logging_filter(config: &LoggingConfig) -> LevelFilter {
         "info" => LevelFilter::INFO,
         "warn" => LevelFilter::WARN,
         "error" => LevelFilter::ERROR,
-        _ => config.default_level.as_str().parse().unwrap_or(LevelFilter::WARN),
+        _ => config
+            .default_level
+            .as_str()
+            .parse()
+            .unwrap_or(LevelFilter::WARN),
     }
 }
 
@@ -122,11 +123,10 @@ fn main() -> Result<()> {
     // NOTE: TelemetryInit has no Drop/flush. Span data survives because spore currently uses
     // SimpleSpanExporter (synchronous, per-span). If the exporter is changed to a batch pipeline,
     // add provider.force_flush() + provider.shutdown() before process exit.
-    let telemetry = spore::telemetry::init_tracer("volva")
-        .unwrap_or_else(|e| {
-            tracing::warn!("OTel init skipped: {}", e);
-            spore::telemetry::TelemetryInit::disabled("volva")
-        });
+    let telemetry = spore::telemetry::init_tracer("volva").unwrap_or_else(|e| {
+        tracing::warn!("OTel init skipped: {}", e);
+        spore::telemetry::TelemetryInit::disabled("volva")
+    });
 
     // Initialize logging with OpenTelemetry layer if telemetry is enabled.
     let logging_config = LoggingConfig::for_app("volva", Level::WARN)
@@ -143,8 +143,14 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let _workflow_span = workflow_span(command_name(cli.command.as_ref()), &span_context).entered();
 
+    // Resolve mode from CLI flag, global config, or baseline default
+    let global_config = GlobalVolvaConfig::load();
+    let mode = cli.mode
+        .or_else(|| global_config.operation_mode())
+        .unwrap_or(OperationMode::Baseline);
+
     // Print mode announcement
-    match cli.mode {
+    match mode {
         OperationMode::Baseline => {
             eprintln!("volva: baseline mode — mycelium, hyphae, and rhizome active");
         }
@@ -156,8 +162,8 @@ fn main() -> Result<()> {
     match cli.command.unwrap_or(Command::Doctor) {
         Command::Auth(auth) => handle_auth(auth),
         Command::Backend(backend) => handle_backend(backend),
-        Command::Chat(chat) => handle_chat(chat, cli.mode),
-        Command::Run(run) => handle_run(run, cli.mode),
+        Command::Chat(chat) => handle_chat(chat, mode),
+        Command::Run(run) => handle_run(run, mode),
         Command::Doctor => {
             let root = env::current_dir()?;
             let config = VolvaConfig::load_from(&root)?;

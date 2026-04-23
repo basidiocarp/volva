@@ -123,8 +123,7 @@ struct ResponseHeaderSnapshot {
 pub fn auth_header_kind(credential: &ResolvedCredential) -> &'static str {
     match credential.mode {
         AuthMode::ApiKey => "x-api-key",
-        AuthMode::BearerToken => "authorization",
-        _ => "authorization",
+        AuthMode::BearerToken | _ => "authorization",
     }
 }
 

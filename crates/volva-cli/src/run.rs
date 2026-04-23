@@ -65,7 +65,8 @@ pub fn handle_run(command: RunCommand, mode: OperationMode) -> Result<()> {
         ExecutionSessionState::Active,
     );
 
-    let span = info_span!("volva.execution",
+    let span = info_span!(
+        "volva.execution",
         execution_mode = "run",
         backend = tracing::field::Empty,
         session_id = tracing::field::Empty,

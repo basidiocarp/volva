@@ -15,17 +15,16 @@ pub struct TaggedLine {
 /// Error returned when a staleness check fails — the file changed since it was read.
 #[derive(Debug, thiserror::Error)]
 pub enum StalenessError {
-    #[error("line {line_number} has changed since last read (expected hash {expected:#010x}, got {actual:#010x})")]
+    #[error(
+        "line {line_number} has changed since last read (expected hash {expected:#010x}, got {actual:#010x})"
+    )]
     LineChanged {
         line_number: u32,
         expected: u32,
         actual: u32,
     },
     #[error("line {line_number} no longer exists in the file (file has {file_lines} lines)")]
-    LineMissing {
-        line_number: u32,
-        file_lines: u32,
-    },
+    LineMissing { line_number: u32, file_lines: u32 },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -108,10 +107,7 @@ pub fn read_chunk_with_hashes(
 
 /// Verify that the anchor hashes in a proposal still match the file's current content.
 /// Returns the first staleness error found, or Ok(()) if all hashes match.
-pub fn check_staleness(
-    path: &Path,
-    proposal: &EditProposal,
-) -> Result<(), StalenessError> {
+pub fn check_staleness(path: &Path, proposal: &EditProposal) -> Result<(), StalenessError> {
     if proposal.anchor_hashes.is_empty() {
         return Ok(()); // no anchors — skip check
     }
@@ -170,8 +166,7 @@ pub fn write_with_staleness_check(
     for line in &output_lines {
         writeln!(tmp, "{line}").map_err(StalenessError::Io)?;
     }
-    tmp.persist(path)
-        .map_err(|e| StalenessError::Io(e.error))?;
+    tmp.persist(path).map_err(|e| StalenessError::Io(e.error))?;
     Ok(())
 }
 
@@ -182,7 +177,7 @@ mod tests {
 
     fn write_temp_file(content: &str) -> tempfile::NamedTempFile {
         let mut f = tempfile::NamedTempFile::new().unwrap();
-        write!(f, "{}", content).unwrap();
+        write!(f, "{content}").unwrap();
         f
     }
 
@@ -265,7 +260,10 @@ mod tests {
         };
         assert!(matches!(
             check_staleness(f.path(), &proposal),
-            Err(StalenessError::LineMissing { line_number: 3, file_lines: 2 })
+            Err(StalenessError::LineMissing {
+                line_number: 3,
+                file_lines: 2
+            })
         ));
     }
 

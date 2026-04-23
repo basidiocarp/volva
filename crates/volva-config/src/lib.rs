@@ -107,6 +107,43 @@ impl VolvaConfig {
     }
 }
 
+/// Global user-level volva configuration, stored at `~/.config/volva/config.toml`.
+/// Written by `stipe init`. The `--mode` CLI flag takes precedence over this.
+#[derive(Debug, Default)]
+pub struct GlobalVolvaConfig {
+    pub mode: Option<String>,
+}
+
+impl GlobalVolvaConfig {
+    /// Load from `~/.config/volva/config.toml`. Returns defaults if the file is absent or unreadable.
+    #[must_use]
+    pub fn load() -> Self {
+        let Some(path) = dirs::config_dir().map(|d| d.join("volva").join("config.toml")) else {
+            return Self::default();
+        };
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            return Self::default();
+        };
+        let mode = contents.lines().find_map(|line| {
+            let line = line.trim();
+            let rest = line.strip_prefix("mode")?.trim_start();
+            let value = rest.strip_prefix('=')?.trim().trim_matches('"');
+            Some(value.to_string())
+        });
+        Self { mode }
+    }
+
+    /// Convert the stored mode string to an `OperationMode`, if recognized.
+    #[must_use]
+    pub fn operation_mode(&self) -> Option<volva_core::OperationMode> {
+        match self.mode.as_deref() {
+            Some("baseline") => Some(volva_core::OperationMode::Baseline),
+            Some("orchestration") => Some(volva_core::OperationMode::Orchestration),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BackendConfig, HookAdapterConfig, VolvaConfig};

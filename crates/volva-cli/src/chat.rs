@@ -43,7 +43,7 @@ pub fn handle_chat(command: ChatCommand, mode: OperationMode) -> Result<()> {
 
     // Note: chat uses the API path directly, not run_backend, so capabilities
     // are created but not used. Future integration with Hymenium will use them.
-    let _capabilities = match mode {
+    match mode {
         OperationMode::Orchestration => {
             let canopy_ok = std::process::Command::new("canopy")
                 .arg("--version")
@@ -57,9 +57,10 @@ pub fn handle_chat(command: ChatCommand, mode: OperationMode) -> Result<()> {
             }
         }
         OperationMode::Baseline => {}
-    };
+    }
 
-    let span = info_span!("volva.execution",
+    let span = info_span!(
+        "volva.execution",
         execution_mode = "chat",
         backend = tracing::field::Empty,
         session_id = tracing::field::Empty,
@@ -153,8 +154,10 @@ mod tests {
     #[test]
     fn persisted_chat_retry_transitions_capture_paused_then_resumed() {
         let vendor_dir = unique_vendor_dir("retry-state");
-        let mut config = VolvaConfig::default();
-        config.vendor_dir = vendor_dir.clone();
+        let config = VolvaConfig {
+            vendor_dir: vendor_dir.clone(),
+            ..Default::default()
+        };
         let runtime = RuntimeBootstrap::new(config);
         let session = test_chat_session("/tmp/chat-retry");
 

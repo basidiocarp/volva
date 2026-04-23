@@ -30,6 +30,7 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
+    #[must_use]
     pub fn recall_limit(&self) -> usize {
         match self.mode {
             OperationMode::Baseline => 20,
@@ -77,6 +78,7 @@ pub(crate) fn assemble_prompt_with_memory_protocol(
     assemble_prompt_with_memory_and_recall(config, request, memory_protocol, None)
 }
 
+#[must_use]
 pub fn capabilities_baseline() -> Capabilities {
     Capabilities {
         mode: OperationMode::Baseline,
@@ -217,8 +219,7 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
                 let mut stdout_bytes = Vec::new();
                 stdout_handle.read_to_end(&mut stdout_bytes).ok()?;
                 let stdout = String::from_utf8(stdout_bytes).ok()?;
-                let surface =
-                    serde_json::from_str::<MemoryProtocolSurface>(stdout.trim()).ok()?;
+                let surface = serde_json::from_str::<MemoryProtocolSurface>(stdout.trim()).ok()?;
                 return Some(format_memory_protocol_block(&surface));
             }
             Ok(None) => {}
@@ -245,7 +246,11 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
     }
 }
 
-fn load_session_recall_block_from_command(command: &str, project: &str, limit: usize) -> Option<String> {
+fn load_session_recall_block_from_command(
+    command: &str,
+    project: &str,
+    limit: usize,
+) -> Option<String> {
     let limit_str = limit.to_string();
     let mut child = Command::new(command)
         .args([
@@ -367,8 +372,8 @@ mod tests {
     use crate::BackendRunRequest;
 
     use super::{
-        assemble_prompt_with_memory_and_recall, assemble_prompt_with_memory_protocol,
-        format_memory_protocol_block, Capabilities,
+        Capabilities, assemble_prompt_with_memory_and_recall, assemble_prompt_with_memory_protocol,
+        format_memory_protocol_block,
     };
 
     // Shell-subprocess tests must not run concurrently: parallel spawns on macOS
@@ -451,8 +456,10 @@ summarize the repository"
 
     #[test]
     fn assemble_prompt_omits_blank_model_lines() {
-        let mut config = VolvaConfig::default();
-        config.model = "   ".to_string();
+        let config = VolvaConfig {
+            model: "   ".to_string(),
+            ..Default::default()
+        };
         let request = test_request("hello", "volva-run-test");
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
@@ -527,7 +534,9 @@ summarize the repository"
     #[cfg(unix)]
     #[test]
     fn load_memory_protocol_block_from_command_reads_runtime_surface() {
-        let _lock = SHELL_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = SHELL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let command = write_test_command(
             "success",
@@ -577,12 +586,8 @@ summarize the repository"
         let protocol = "[hyphae-memory-protocol]\nsummary: test protocol";
         let recall = "[hyphae-session-recall]\nproject: project\nses_abc [completed] -> did work";
 
-        let prepared = assemble_prompt_with_memory_and_recall(
-            &config,
-            &request,
-            Some(protocol),
-            Some(recall),
-        );
+        let prepared =
+            assemble_prompt_with_memory_and_recall(&config, &request, Some(protocol), Some(recall));
 
         let text = prepared.final_prompt();
         assert!(text.contains(protocol));
