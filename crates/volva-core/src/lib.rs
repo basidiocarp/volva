@@ -7,6 +7,22 @@ use uuid::Uuid;
 pub const OAUTH_BETA_HEADER_NAME: &str = "anthropic-beta";
 pub const OAUTH_BETA_HEADER_VALUE: &str = "oauth-2025-04-20";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum OperationMode {
+    #[default]
+    Baseline,
+    Orchestration,
+}
+
+impl fmt::Display for OperationMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Baseline => f.write_str("baseline"),
+            Self::Orchestration => f.write_str("orchestration"),
+        }
+    }
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

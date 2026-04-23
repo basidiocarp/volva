@@ -1,5 +1,5 @@
 mod backend;
-mod context;
+pub mod context;
 pub mod execenv;
 mod hooks;
 pub mod hash_edit;
@@ -27,10 +27,11 @@ pub struct RuntimeBootstrap {
     hooks: HookShell,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BackendRunRequest {
     pub prompt: String,
     pub session: ExecutionSessionIdentity,
+    pub capabilities: context::Capabilities,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,7 +169,8 @@ impl RuntimeBootstrap {
             workflow_span("run_backend", &span_context_for_request(request)).entered();
         backend::validate_request(request)?;
         self.persist_execution_session(request.session.clone())?;
-        let prepared_prompt = context::assemble_prompt(&self.config, request);
+        let prepared_prompt =
+            context::assemble_prompt(&self.config, request, &request.capabilities);
 
         let context = HookContext::from_request(request, prepared_prompt.final_prompt());
 
@@ -227,10 +229,10 @@ mod tests {
     use volva_config::VolvaConfig;
     use volva_core::{
         BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
-        ExecutionSessionState, WorkspaceBinding,
+        ExecutionSessionState, OperationMode, WorkspaceBinding,
     };
 
-    use crate::{BackendRunRequest, HookAdapter, HookEvent, HookPhase, HookShell};
+    use crate::{BackendRunRequest, HookAdapter, HookEvent, HookPhase, HookShell, context};
 
     fn test_session(cwd: &str, backend: BackendKind) -> ExecutionSessionIdentity {
         ExecutionSessionIdentity::new(
@@ -243,6 +245,17 @@ mod tests {
             },
             ExecutionSessionState::Active,
         )
+    }
+
+    fn test_request(prompt: &str, cwd: &str, backend: BackendKind) -> BackendRunRequest {
+        BackendRunRequest {
+            prompt: prompt.to_string(),
+            session: test_session(cwd, backend),
+            capabilities: context::Capabilities {
+                mode: OperationMode::Baseline,
+                canopy_available: false,
+            },
+        }
     }
 
     fn unique_vendor_dir(label: &str) -> PathBuf {
@@ -318,10 +331,7 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "headless ok".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("headless ok", "/tmp", BackendKind::OfficialCli))
             .expect("echo backend should run");
 
         assert!(result.success());
@@ -350,10 +360,7 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "show status".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("show status", "/tmp", BackendKind::OfficialCli))
             .expect("echo backend should run");
 
         assert!(result.stdout.starts_with("-p [volva-host-context]"));
@@ -369,10 +376,7 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "show status".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("show status", "/tmp", BackendKind::OfficialCli))
             .expect("echo backend should run");
 
         let before_prompt = runtime
@@ -405,10 +409,7 @@ mod tests {
         let events = adapter.events.clone();
         let runtime = RuntimeBootstrap::with_hook_adapter(config, adapter);
         let result = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "headless adapter".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("headless adapter", "/tmp", BackendKind::OfficialCli))
             .expect("echo backend should run");
 
         assert!(result.success());
@@ -438,10 +439,7 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let error = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "headless fail".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("headless fail", "/tmp", BackendKind::OfficialCli))
             .expect_err("missing backend command should fail");
 
         let events = runtime.hook_events();
@@ -467,10 +465,7 @@ mod tests {
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "headless fail".to_string(),
-                session: test_session("/tmp", BackendKind::OfficialCli),
-            })
+            .run_backend(&test_request("headless fail", "/tmp", BackendKind::OfficialCli))
             .expect("false backend should launch");
 
         assert!(!result.success());
@@ -498,10 +493,7 @@ mod tests {
             RuntimeBootstrap::with_hook_shell(VolvaConfig::default(), HookShell::recording());
 
         let error = runtime
-            .run_backend(&BackendRunRequest {
-                prompt: "headless fail".to_string(),
-                session: test_session("/tmp", BackendKind::AnthropicApi),
-            })
+            .run_backend(&test_request("headless fail", "/tmp", BackendKind::AnthropicApi))
             .expect_err("unsupported backend should fail before hook dispatch");
 
         assert!(
@@ -526,6 +518,10 @@ mod tests {
             .run_backend(&BackendRunRequest {
                 prompt: "persist me".to_string(),
                 session: session.clone(),
+                capabilities: context::Capabilities {
+                    mode: OperationMode::Baseline,
+                    canopy_available: false,
+                },
             })
             .expect("echo backend should run");
 

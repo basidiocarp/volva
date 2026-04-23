@@ -7,7 +7,7 @@ use tracing::info_span;
 use volva_api::{ApiClientConfig, ChatRequest};
 use volva_auth::resolve_credential;
 use volva_config::VolvaConfig;
-use volva_core::{BackendKind, ExecutionMode, ExecutionSessionState};
+use volva_core::{BackendKind, ExecutionMode, ExecutionSessionState, OperationMode};
 use volva_runtime::RuntimeBootstrap;
 
 use crate::session::session_for_workspace;
@@ -21,7 +21,7 @@ pub struct ChatCommand {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn handle_chat(command: ChatCommand) -> Result<()> {
+pub fn handle_chat(command: ChatCommand, mode: OperationMode) -> Result<()> {
     let prompt = command.prompt.join(" ").trim().to_string();
     if prompt.is_empty() {
         bail!("volva chat requires a prompt");
@@ -40,6 +40,24 @@ pub fn handle_chat(command: ChatCommand) -> Result<()> {
         BackendKind::AnthropicApi,
         ExecutionSessionState::Active,
     );
+
+    // Note: chat uses the API path directly, not run_backend, so capabilities
+    // are created but not used. Future integration with Hymenium will use them.
+    let _capabilities = match mode {
+        OperationMode::Orchestration => {
+            let canopy_ok = std::process::Command::new("canopy")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if !canopy_ok {
+                bail!(
+                    "orchestration mode requires canopy — start canopy first or use --mode baseline"
+                );
+            }
+        }
+        OperationMode::Baseline => {}
+    };
 
     let span = info_span!("volva.execution",
         execution_mode = "chat",

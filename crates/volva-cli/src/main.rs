@@ -20,6 +20,7 @@ use crate::auth::{AuthCommand, handle_auth};
 use crate::backend::{BackendCommand, handle_backend, render_backend_doctor};
 use crate::chat::{ChatCommand, handle_chat};
 use crate::run::{RunCommand, handle_run};
+use volva_core::OperationMode;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -28,6 +29,9 @@ use crate::run::{RunCommand, handle_run};
     about = "Claude-first runtime shell for Basidiocarp"
 )]
 struct Cli {
+    #[arg(long, value_enum, default_value = "baseline")]
+    pub mode: OperationMode,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -139,11 +143,21 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let _workflow_span = workflow_span(command_name(cli.command.as_ref()), &span_context).entered();
 
+    // Print mode announcement
+    match cli.mode {
+        OperationMode::Baseline => {
+            eprintln!("volva: baseline mode — mycelium, hyphae, and rhizome active");
+        }
+        OperationMode::Orchestration => {
+            eprintln!("volva: orchestration mode — canopy connected, full memory budget active");
+        }
+    }
+
     match cli.command.unwrap_or(Command::Doctor) {
         Command::Auth(auth) => handle_auth(auth),
         Command::Backend(backend) => handle_backend(backend),
-        Command::Chat(chat) => handle_chat(chat),
-        Command::Run(run) => handle_run(run),
+        Command::Chat(chat) => handle_chat(chat, cli.mode),
+        Command::Run(run) => handle_run(run, cli.mode),
         Command::Doctor => {
             let root = env::current_dir()?;
             let config = VolvaConfig::load_from(&root)?;

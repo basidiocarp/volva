@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tracing::warn;
 use volva_config::VolvaConfig;
+use volva_core::OperationMode;
 
 use crate::BackendRunRequest;
 
@@ -21,7 +22,21 @@ const HYPHAE_PROTOCOL_RESOURCE_URI: &str = "hyphae://protocol/current";
 const MEMORY_PROTOCOL_TIMEOUT: Duration = Duration::from_millis(250);
 const MEMORY_PROTOCOL_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const SESSION_RECALL_TIMEOUT: Duration = Duration::from_millis(500);
-const SESSION_RECALL_LIMIT: usize = 5;
+
+#[derive(Debug, Clone)]
+pub struct Capabilities {
+    pub mode: OperationMode,
+    pub canopy_available: bool,
+}
+
+impl Capabilities {
+    pub fn recall_limit(&self) -> usize {
+        match self.mode {
+            OperationMode::Baseline => 20,
+            OperationMode::Orchestration => 50,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedPrompt {
@@ -36,10 +51,14 @@ impl PreparedPrompt {
 }
 
 #[must_use]
-pub fn assemble_prompt(config: &VolvaConfig, request: &BackendRunRequest) -> PreparedPrompt {
+pub fn assemble_prompt(
+    config: &VolvaConfig,
+    request: &BackendRunRequest,
+    caps: &Capabilities,
+) -> PreparedPrompt {
     let workspace_root = request.session.workspace.workspace_root.as_str();
     let memory_protocol = load_memory_protocol_block(workspace_root);
-    let session_recall = load_session_recall_block(workspace_root);
+    let session_recall = load_session_recall_block(workspace_root, caps);
     assemble_prompt_with_memory_and_recall(
         config,
         request,
@@ -56,6 +75,13 @@ pub(crate) fn assemble_prompt_with_memory_protocol(
     memory_protocol: Option<&str>,
 ) -> PreparedPrompt {
     assemble_prompt_with_memory_and_recall(config, request, memory_protocol, None)
+}
+
+pub fn capabilities_baseline() -> Capabilities {
+    Capabilities {
+        mode: OperationMode::Baseline,
+        canopy_available: false,
+    }
 }
 
 #[must_use]
@@ -155,12 +181,12 @@ fn load_memory_protocol_block(workspace_root: &str) -> Option<String> {
     load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND)
 }
 
-fn load_session_recall_block(workspace_root: &str) -> Option<String> {
+fn load_session_recall_block(workspace_root: &str, caps: &Capabilities) -> Option<String> {
     let project = Path::new(workspace_root)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(workspace_root);
-    load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, project)
+    load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, project, caps.recall_limit())
 }
 
 fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
@@ -215,7 +241,8 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
     }
 }
 
-fn load_session_recall_block_from_command(command: &str, project: &str) -> Option<String> {
+fn load_session_recall_block_from_command(command: &str, project: &str, limit: usize) -> Option<String> {
+    let limit_str = limit.to_string();
     let mut child = Command::new(command)
         .args([
             "session",
@@ -223,7 +250,7 @@ fn load_session_recall_block_from_command(command: &str, project: &str) -> Optio
             "--project",
             project,
             "--limit",
-            &SESSION_RECALL_LIMIT.to_string(),
+            &limit_str,
         ])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -326,14 +353,14 @@ mod tests {
     use volva_config::VolvaConfig;
     use volva_core::{
         BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionId,
-        ExecutionSessionIdentity, ExecutionSessionState, WorkspaceBinding,
+        ExecutionSessionIdentity, ExecutionSessionState, OperationMode, WorkspaceBinding,
     };
 
     use crate::BackendRunRequest;
 
     use super::{
         assemble_prompt_with_memory_and_recall, assemble_prompt_with_memory_protocol,
-        format_memory_protocol_block,
+        format_memory_protocol_block, Capabilities,
     };
 
     // Shell-subprocess tests must not run concurrently: parallel spawns on macOS
@@ -369,13 +396,11 @@ mod tests {
         path
     }
 
-    #[test]
-    fn assemble_prompt_prepends_static_host_envelope() {
-        let config = VolvaConfig::default();
-        let request = BackendRunRequest {
-            prompt: "summarize the repository".to_string(),
+    fn test_request(prompt: &str, session_id: &str) -> BackendRunRequest {
+        BackendRunRequest {
+            prompt: prompt.to_string(),
             session: ExecutionSessionIdentity {
-                session_id: ExecutionSessionId("volva-run-test".to_string()),
+                session_id: ExecutionSessionId(session_id.to_string()),
                 mode: ExecutionMode::Run,
                 backend: BackendKind::OfficialCli,
                 workspace: WorkspaceBinding::from_root("/tmp/project"),
@@ -385,7 +410,17 @@ mod tests {
                 },
                 state: ExecutionSessionState::Active,
             },
-        };
+            capabilities: Capabilities {
+                mode: OperationMode::Baseline,
+                canopy_available: false,
+            },
+        }
+    }
+
+    #[test]
+    fn assemble_prompt_prepends_static_host_envelope() {
+        let config = VolvaConfig::default();
+        let request = test_request("summarize the repository", "volva-run-test");
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
 
@@ -410,20 +445,7 @@ summarize the repository"
     fn assemble_prompt_omits_blank_model_lines() {
         let mut config = VolvaConfig::default();
         config.model = "   ".to_string();
-        let request = BackendRunRequest {
-            prompt: "hello".to_string(),
-            session: ExecutionSessionIdentity {
-                session_id: ExecutionSessionId("volva-run-test".to_string()),
-                mode: ExecutionMode::Run,
-                backend: BackendKind::OfficialCli,
-                workspace: WorkspaceBinding::from_root("/tmp/project"),
-                primary_participant: ExecutionParticipantIdentity {
-                    participant_id: "operator@volva".to_string(),
-                    host_kind: "volva".to_string(),
-                },
-                state: ExecutionSessionState::Active,
-            },
-        };
+        let request = test_request("hello", "volva-run-test");
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
 
@@ -434,20 +456,7 @@ summarize the repository"
     #[test]
     fn assemble_prompt_includes_hyphae_memory_protocol_block_when_available() {
         let config = VolvaConfig::default();
-        let request = BackendRunRequest {
-            prompt: "summarize the repository".to_string(),
-            session: ExecutionSessionIdentity {
-                session_id: ExecutionSessionId("volva-run-test".to_string()),
-                mode: ExecutionMode::Run,
-                backend: BackendKind::OfficialCli,
-                workspace: WorkspaceBinding::from_root("/tmp/project"),
-                primary_participant: ExecutionParticipantIdentity {
-                    participant_id: "operator@volva".to_string(),
-                    host_kind: "volva".to_string(),
-                },
-                state: ExecutionSessionState::Active,
-            },
-        };
+        let request = test_request("summarize the repository", "volva-run-test");
         let protocol = "[hyphae-memory-protocol]\nsummary: test protocol";
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, Some(protocol));
@@ -547,6 +556,7 @@ summarize the repository"
         let block = super::load_session_recall_block_from_command(
             "/nonexistent/hyphae-test-binary",
             "myproject",
+            20,
         );
 
         assert!(block.is_none(), "missing command should produce None");
@@ -555,20 +565,7 @@ summarize the repository"
     #[test]
     fn assemble_prompt_includes_both_protocol_and_recall_blocks() {
         let config = VolvaConfig::default();
-        let request = BackendRunRequest {
-            prompt: "do work".to_string(),
-            session: ExecutionSessionIdentity {
-                session_id: ExecutionSessionId("volva-run-test".to_string()),
-                mode: ExecutionMode::Run,
-                backend: BackendKind::OfficialCli,
-                workspace: WorkspaceBinding::from_root("/tmp/project"),
-                primary_participant: ExecutionParticipantIdentity {
-                    participant_id: "operator@volva".to_string(),
-                    host_kind: "volva".to_string(),
-                },
-                state: ExecutionSessionState::Active,
-            },
-        };
+        let request = test_request("do work", "volva-run-test");
         let protocol = "[hyphae-memory-protocol]\nsummary: test protocol";
         let recall = "[hyphae-session-recall]\nproject: project\nses_abc [completed] -> did work";
 
@@ -595,20 +592,7 @@ summarize the repository"
     #[test]
     fn assemble_prompt_with_recall_only_omits_protocol_block() {
         let config = VolvaConfig::default();
-        let request = BackendRunRequest {
-            prompt: "do work".to_string(),
-            session: ExecutionSessionIdentity {
-                session_id: ExecutionSessionId("volva-run-test".to_string()),
-                mode: ExecutionMode::Run,
-                backend: BackendKind::OfficialCli,
-                workspace: WorkspaceBinding::from_root("/tmp/project"),
-                primary_participant: ExecutionParticipantIdentity {
-                    participant_id: "operator@volva".to_string(),
-                    host_kind: "volva".to_string(),
-                },
-                state: ExecutionSessionState::Active,
-            },
-        };
+        let request = test_request("do work", "volva-run-test");
         let recall = "[hyphae-session-recall]\nproject: project\nses_abc [completed] -> did work";
 
         let prepared =
