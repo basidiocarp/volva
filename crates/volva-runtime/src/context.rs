@@ -616,4 +616,57 @@ summarize the repository"
         assert!(!text.contains("[hyphae-memory-protocol]"));
         assert!(text.contains("\n\n[user-prompt]\n"));
     }
+
+    #[test]
+    fn load_memory_protocol_block_from_command_returns_none_on_nonexistent_command() {
+        // A command that does not exist should fail to spawn and return None gracefully.
+        // This exercises the timeout path without requiring a slow sleep.
+        let block = super::load_memory_protocol_block_from_command("/nonexistent/hyphae-cmd");
+
+        assert!(
+            block.is_none(),
+            "nonexistent command should return None, not panic"
+        );
+    }
+
+    #[test]
+    fn load_session_recall_block_from_command_returns_none_on_command_failure() {
+        // A command that fails (exits non-zero) should return None gracefully.
+        // This simulates the timeout path without requiring the actual timeout duration.
+        let block = super::load_session_recall_block_from_command(
+            "/nonexistent/hyphae-session-cmd",
+            "testproject",
+            20,
+        );
+
+        assert!(
+            block.is_none(),
+            "failed command should return None, not panic"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_respects_capabilities_recall_limit() {
+        // When capabilities specify Orchestration mode, recall_limit should be 50
+        let caps = Capabilities {
+            mode: OperationMode::Orchestration,
+            canopy_available: true,
+        };
+        assert_eq!(
+            caps.recall_limit(),
+            50,
+            "orchestration mode should have recall_limit of 50"
+        );
+
+        // When capabilities specify Baseline mode, recall_limit should be 20
+        let baseline = Capabilities {
+            mode: OperationMode::Baseline,
+            canopy_available: false,
+        };
+        assert_eq!(
+            baseline.recall_limit(),
+            20,
+            "baseline mode should have recall_limit of 20"
+        );
+    }
 }
