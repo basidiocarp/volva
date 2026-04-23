@@ -229,6 +229,10 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
         }
 
         if start.elapsed() >= MEMORY_PROTOCOL_TIMEOUT {
+            tracing::warn!(
+                timeout_ms = MEMORY_PROTOCOL_TIMEOUT.as_millis(),
+                "volva: hyphae protocol load timed out — session starts without memory context"
+            );
             let _ = child.kill();
             // Reap the child to avoid a zombie; discard the exit status.
             if let Err(err) = child.wait() {
@@ -287,6 +291,10 @@ fn load_session_recall_block_from_command(command: &str, project: &str, limit: u
         }
 
         if start.elapsed() >= SESSION_RECALL_TIMEOUT {
+            tracing::warn!(
+                timeout_ms = SESSION_RECALL_TIMEOUT.as_millis(),
+                "volva: hyphae session recall timed out — prompt sent without session context"
+            );
             let _ = child.kill();
             // Reap the child to avoid a zombie; discard the exit status.
             if let Err(err) = child.wait() {
