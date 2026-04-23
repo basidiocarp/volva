@@ -146,7 +146,7 @@ impl GlobalVolvaConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{BackendConfig, HookAdapterConfig, VolvaConfig};
+    use super::{BackendConfig, GlobalVolvaConfig, HookAdapterConfig, VolvaConfig};
     use volva_core::BackendKind;
 
     #[test]
@@ -280,5 +280,39 @@ mod tests {
         .expect("config should deserialize");
 
         assert_eq!(config.hook_adapter.timeout_ms, 45_000);
+    }
+
+    #[test]
+    fn global_config_defaults_when_missing() {
+        let config = GlobalVolvaConfig::default();
+        assert_eq!(config.mode, None);
+        assert_eq!(config.operation_mode(), None);
+    }
+
+    #[test]
+    fn global_config_parses_baseline_mode() {
+        let config = GlobalVolvaConfig {
+            mode: Some("baseline".to_string()),
+        };
+        assert_eq!(config.operation_mode(), Some(volva_core::OperationMode::Baseline));
+    }
+
+    #[test]
+    fn global_config_parses_orchestration_mode() {
+        let config = GlobalVolvaConfig {
+            mode: Some("orchestration".to_string()),
+        };
+        assert_eq!(
+            config.operation_mode(),
+            Some(volva_core::OperationMode::Orchestration)
+        );
+    }
+
+    #[test]
+    fn global_config_ignores_unknown_mode() {
+        let config = GlobalVolvaConfig {
+            mode: Some("unknown".to_string()),
+        };
+        assert_eq!(config.operation_mode(), None);
     }
 }
