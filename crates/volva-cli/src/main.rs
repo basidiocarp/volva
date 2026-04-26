@@ -145,7 +145,8 @@ fn main() -> Result<()> {
 
     // Resolve mode from CLI flag, global config, or baseline default
     let global_config = GlobalVolvaConfig::load();
-    let mode = cli.mode
+    let mode = cli
+        .mode
         .or_else(|| global_config.operation_mode())
         .unwrap_or(OperationMode::Baseline);
 

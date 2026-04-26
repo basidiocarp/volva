@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use volva_core::BackendKind;
+use volva_core::{BackendKind, CheckpointDurability};
 
 fn default_vendor_dir() -> PathBuf {
     PathBuf::from("vendor")
@@ -76,6 +76,8 @@ pub struct VolvaConfig {
     pub hook_adapter: HookAdapterConfig,
     #[serde(default = "default_vendor_dir")]
     pub vendor_dir: PathBuf,
+    #[serde(default)]
+    pub durability_mode: CheckpointDurability,
 }
 
 impl Default for VolvaConfig {
@@ -87,6 +89,7 @@ impl Default for VolvaConfig {
             backend: BackendConfig::default(),
             hook_adapter: HookAdapterConfig::default(),
             vendor_dir: default_vendor_dir(),
+            durability_mode: CheckpointDurability::default(),
         }
     }
 }
@@ -94,16 +97,34 @@ impl Default for VolvaConfig {
 impl VolvaConfig {
     pub fn load_from(root: &Path) -> Result<Self> {
         let path = root.join("volva.json");
-        if !path.exists() {
-            return Ok(Self::default());
-        }
+        let mut config = if path.exists() {
+            let raw = fs::read_to_string(path)?;
+            serde_json::from_str::<Self>(&raw)?
+        } else {
+            Self::default()
+        };
 
-        let raw = fs::read_to_string(path)?;
-        let mut config = serde_json::from_str::<Self>(&raw)?;
         if config.vendor_dir.is_relative() {
             config.vendor_dir = root.join(&config.vendor_dir);
         }
+
+        // Check for VOLVA_CHECKPOINT_DURABILITY env var override
+        if let Ok(mode_str) = std::env::var("VOLVA_CHECKPOINT_DURABILITY") {
+            Self::apply_durability_override(&mut config, &mode_str);
+        }
+
         Ok(config)
+    }
+
+    fn apply_durability_override(config: &mut VolvaConfig, mode_str: &str) {
+        match mode_str {
+            "sync" => config.durability_mode = CheckpointDurability::Sync,
+            "async" => config.durability_mode = CheckpointDurability::Async,
+            "exit" => config.durability_mode = CheckpointDurability::Exit,
+            other => {
+                eprintln!("warning: unknown checkpoint durability mode '{other}', keeping default");
+            }
+        }
     }
 }
 
@@ -294,7 +315,10 @@ mod tests {
         let config = GlobalVolvaConfig {
             mode: Some("baseline".to_string()),
         };
-        assert_eq!(config.operation_mode(), Some(volva_core::OperationMode::Baseline));
+        assert_eq!(
+            config.operation_mode(),
+            Some(volva_core::OperationMode::Baseline)
+        );
     }
 
     #[test]
@@ -314,5 +338,78 @@ mod tests {
             mode: Some("unknown".to_string()),
         };
         assert_eq!(config.operation_mode(), None);
+    }
+
+    #[test]
+    fn durability_mode_default_is_async() {
+        let config = VolvaConfig::default();
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Async
+        );
+    }
+
+    #[test]
+    fn durability_mode_deserializes_from_json() {
+        let config = serde_json::from_str::<VolvaConfig>(
+            r#"{
+              "model": "claude-sonnet-4-6",
+              "api_base_url": "https://api.anthropic.com",
+              "experimental_bridge": false,
+              "durability_mode": "sync"
+            }"#,
+        )
+        .expect("config should deserialize");
+
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Sync
+        );
+    }
+
+    #[test]
+    fn durability_override_sync() {
+        let mut config = VolvaConfig::default();
+        VolvaConfig::apply_durability_override(&mut config, "sync");
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Sync
+        );
+    }
+
+    #[test]
+    fn durability_override_async() {
+        let mut config = VolvaConfig {
+            durability_mode: volva_core::CheckpointDurability::Sync,
+            ..Default::default()
+        };
+        VolvaConfig::apply_durability_override(&mut config, "async");
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Async
+        );
+    }
+
+    #[test]
+    fn durability_override_exit() {
+        let mut config = VolvaConfig::default();
+        VolvaConfig::apply_durability_override(&mut config, "exit");
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Exit
+        );
+    }
+
+    #[test]
+    fn durability_override_unknown_keeps_current() {
+        let mut config = VolvaConfig {
+            durability_mode: volva_core::CheckpointDurability::Sync,
+            ..Default::default()
+        };
+        VolvaConfig::apply_durability_override(&mut config, "invalid");
+        assert_eq!(
+            config.durability_mode,
+            volva_core::CheckpointDurability::Sync
+        );
     }
 }

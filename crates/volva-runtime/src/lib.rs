@@ -1,4 +1,5 @@
 mod backend;
+pub mod checkpoint_sqlite;
 pub mod context;
 pub mod execenv;
 pub mod hash_edit;

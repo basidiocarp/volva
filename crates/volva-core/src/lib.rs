@@ -4,6 +4,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod checkpoint;
+
+pub use checkpoint::{Checkpoint, CheckpointDurability, CheckpointError, CheckpointSaver};
+
 pub const OAUTH_BETA_HEADER_NAME: &str = "anthropic-beta";
 pub const OAUTH_BETA_HEADER_VALUE: &str = "oauth-2025-04-20";
 
