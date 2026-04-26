@@ -33,7 +33,8 @@ If `cortina` is not on `PATH`, keep the same argv and replace `"command":
 "cortina"` with the absolute binary path.
 
 For slower wrapper commands such as `cargo run --manifest-path .../cortina/Cargo.toml --`,
-set `"timeout_ms"` higher than the default `30000`.
+set `"timeout_ms"` to a value between 1 and 30000 (the maximum allowed). The default is `30000`.
+Values outside this range will be clamped.
 
 ## Fast Config Check
 

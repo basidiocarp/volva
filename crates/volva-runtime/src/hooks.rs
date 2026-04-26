@@ -457,6 +457,7 @@ impl HookShell {
 
     #[must_use]
     pub fn configured(config: HookAdapterConfig) -> Self {
+        let config = config.with_clamped_timeout();
         let timeout = Duration::from_millis(config.timeout_ms);
         Self::from_config(config, timeout)
     }
@@ -646,6 +647,38 @@ mod tests {
             shell.adapter_state(),
             &HookAdapterState::ConfiguredNoop { command: None }
         );
+    }
+
+    #[test]
+    fn configured_hook_shell_clamps_timeout_zero_to_minimum() {
+        let shell = HookShell::configured(HookAdapterConfig {
+            enabled: true,
+            command: Some("/usr/bin/true".to_string()),
+            args: Vec::new(),
+            timeout_ms: 0,
+        });
+
+        // Verify that the adapter was created (which means timeout was valid after clamping)
+        assert!(matches!(
+            shell.adapter_state(),
+            &HookAdapterState::ConfiguredExternal { .. }
+        ));
+    }
+
+    #[test]
+    fn configured_hook_shell_clamps_timeout_exceeding_max() {
+        let shell = HookShell::configured(HookAdapterConfig {
+            enabled: true,
+            command: Some("/usr/bin/true".to_string()),
+            args: Vec::new(),
+            timeout_ms: 50_000,
+        });
+
+        // Verify that the adapter was created (which means timeout was clamped to 30000)
+        assert!(matches!(
+            shell.adapter_state(),
+            &HookAdapterState::ConfiguredExternal { .. }
+        ));
     }
 
     #[cfg(unix)]

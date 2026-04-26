@@ -54,6 +54,15 @@ pub struct HookAdapterConfig {
     pub timeout_ms: u64,
 }
 
+impl HookAdapterConfig {
+    /// Clamp `timeout_ms` to the valid range [1, 30000].
+    #[must_use]
+    pub fn with_clamped_timeout(mut self) -> Self {
+        self.timeout_ms = self.timeout_ms.clamp(1, 30_000);
+        self
+    }
+}
+
 impl Default for HookAdapterConfig {
     fn default() -> Self {
         Self {
@@ -411,5 +420,44 @@ mod tests {
             config.durability_mode,
             volva_core::CheckpointDurability::Sync
         );
+    }
+
+    #[test]
+    fn hook_adapter_timeout_zero_is_clamped_to_one() {
+        let config = HookAdapterConfig {
+            enabled: true,
+            command: Some("cortina".to_string()),
+            args: Vec::new(),
+            timeout_ms: 0,
+        };
+
+        let clamped = config.with_clamped_timeout();
+        assert_eq!(clamped.timeout_ms, 1);
+    }
+
+    #[test]
+    fn hook_adapter_timeout_exceeding_max_is_clamped() {
+        let config = HookAdapterConfig {
+            enabled: true,
+            command: Some("cortina".to_string()),
+            args: Vec::new(),
+            timeout_ms: 50_000,
+        };
+
+        let clamped = config.with_clamped_timeout();
+        assert_eq!(clamped.timeout_ms, 30_000);
+    }
+
+    #[test]
+    fn hook_adapter_timeout_within_range_is_unchanged() {
+        let config = HookAdapterConfig {
+            enabled: true,
+            command: Some("cortina".to_string()),
+            args: Vec::new(),
+            timeout_ms: 15_000,
+        };
+
+        let clamped = config.with_clamped_timeout();
+        assert_eq!(clamped.timeout_ms, 15_000);
     }
 }
