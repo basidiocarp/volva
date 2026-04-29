@@ -4,6 +4,7 @@ use anyhow::{Result, bail};
 use clap::Args;
 use tracing::info_span;
 
+use spore::{Tool, discover};
 use volva_config::VolvaConfig;
 use volva_core::{BackendKind, ExecutionMode, ExecutionSessionState, OperationMode};
 use volva_runtime::{BackendRunRequest, RuntimeBootstrap, context};
@@ -36,11 +37,7 @@ pub fn handle_run(command: RunCommand, mode: OperationMode) -> Result<()> {
     // Build capabilities based on mode
     let capabilities = match mode {
         OperationMode::Orchestration => {
-            let canopy_ok = std::process::Command::new("canopy")
-                .arg("--version")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+            let canopy_ok = discover(Tool::Canopy).is_some();
             if !canopy_ok {
                 bail!(
                     "orchestration mode requires canopy — start canopy first or use --mode baseline"
