@@ -22,6 +22,150 @@ use crate::{BackendRunRequest, backend::BackendRunResult};
 const HOOK_ADAPTER_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const VOLVA_HOOK_EVENT_SCHEMA_VERSION: &str = "1.0";
 
+/// Maximum length for a diagnostic line after redaction.
+const DIAGNOSTIC_MAX_LINE_LEN: usize = 500;
+
+/// Environment variable names that hook adapter subprocesses are allowed to inherit.
+const HOOK_ADAPTER_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "VOLVA_SESSION_ID",
+    "TRACEPARENT",
+    "TRACESTATE",
+];
+
+/// Redact sensitive patterns from a diagnostic string before logging or recording.
+///
+/// Strips bearer tokens, environment-style key assignments, and long hex/base64
+/// secrets. Truncates the result to [`DIAGNOSTIC_MAX_LINE_LEN`] characters.
+fn redact_diagnostic(input: &str) -> String {
+    use std::borrow::Cow;
+
+    // Patterns to redact (in order of application):
+    // 1. Bearer <token>
+    // 2. NAME=<value> where NAME matches *_KEY, *_TOKEN, *_SECRET, *_PASSWORD
+    // 3. Hex strings of 40+ characters
+    let mut output = Cow::Borrowed(input);
+
+    // Bearer token
+    {
+        let s = output.as_ref();
+        if let Some(pos) = s.to_ascii_lowercase().find("bearer ") {
+            let rest = &s[pos + 7..];
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+                .unwrap_or(rest.len());
+            if end > 0 {
+                let mut replaced = String::with_capacity(s.len());
+                replaced.push_str(&s[..pos + 7]);
+                replaced.push_str("[REDACTED]");
+                replaced.push_str(&rest[end..]);
+                output = Cow::Owned(replaced);
+            }
+        }
+    }
+
+    // Env-style assignments: NAME=VALUE where NAME ends in _KEY, _TOKEN, _SECRET, _PASSWORD
+    {
+        let s = output.into_owned();
+        let mut result = String::with_capacity(s.len());
+        let mut last_end = 0usize; // tracks where we last wrote up to in `s`
+        let mut i = 0usize;
+        let bytes = s.as_bytes();
+        while i < bytes.len() {
+            // Look for '=' preceded by an identifier ending in _KEY, _TOKEN, _SECRET, _PASSWORD
+            if bytes[i] == b'=' {
+                // Walk back to find the start of the name
+                let mut name_start = i;
+                while name_start > 0
+                    && (bytes[name_start - 1].is_ascii_alphanumeric()
+                        || bytes[name_start - 1] == b'_')
+                {
+                    name_start -= 1;
+                }
+                // Only consider the identifier if it starts within the unwritten region
+                if name_start >= last_end {
+                    let name = &s[name_start..i];
+                    let upper = name.to_ascii_uppercase();
+                    let sensitive = upper.ends_with("_KEY")
+                        || upper.ends_with("_TOKEN")
+                        || upper.ends_with("_SECRET")
+                        || upper.ends_with("_PASSWORD");
+                    if sensitive && !name.is_empty() {
+                        // Write from last_end up to and including the '='
+                        result.push_str(&s[last_end..=i]);
+                        result.push_str("[REDACTED]");
+                        // Skip the value (up to whitespace or end)
+                        let rest_start = i + 1;
+                        let value_len = s[rest_start..]
+                            .find(|c: char| c.is_whitespace())
+                            .unwrap_or(s.len() - rest_start);
+                        i = rest_start + value_len;
+                        last_end = i;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
+        // Write any remaining text
+        result.push_str(&s[last_end..]);
+        // Only replace if we actually redacted something (i.e., result differs from s)
+        if last_end > 0 {
+            output = Cow::Owned(result);
+        } else {
+            output = Cow::Owned(s);
+        }
+    }
+
+    // Long hex strings (40+ hex chars)
+    {
+        let s = output.as_ref();
+        let redacted = replace_long_hex(s);
+        output = Cow::Owned(redacted);
+    }
+
+    // Truncate
+    let s = output.as_ref();
+    if s.chars().count() > DIAGNOSTIC_MAX_LINE_LEN {
+        let truncated: String = s.chars().take(DIAGNOSTIC_MAX_LINE_LEN).collect();
+        format!("{truncated}…")
+    } else {
+        s.to_string()
+    }
+}
+
+/// Replace hex strings of 40 or more consecutive hex characters with `[REDACTED]`.
+fn replace_long_hex(input: &str) -> String {
+    const MIN_HEX_LEN: usize = 40;
+    let mut result = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_hexdigit() {
+            let start = i;
+            while i < chars.len() && chars[i].is_ascii_hexdigit() {
+                i += 1;
+            }
+            let run_len = i - start;
+            if run_len >= MIN_HEX_LEN {
+                result.push_str("[REDACTED]");
+            } else {
+                for ch in &chars[start..i] {
+                    result.push(*ch);
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -210,6 +354,16 @@ impl ExternalCommandHookAdapter {
         let stderr_file = TempIoFile::new("stderr", None)
             .context("failed to stage hook adapter stderr capture")?;
         let mut cmd = Command::new(&self.command.command);
+        // Clear the full inherited environment before building the allowlist.
+        // This prevents API keys, tokens, and other secrets from leaking into
+        // repo-controlled hook adapter processes.
+        cmd.env_clear();
+        // Re-add only the safe subset of the parent environment.
+        for key in HOOK_ADAPTER_ENV_ALLOWLIST {
+            if let Ok(value) = env::var(key) {
+                cmd.env(key, value);
+            }
+        }
         cmd.args(&self.command.args)
             .current_dir(&event.context.cwd)
             .stdin(
@@ -263,8 +417,8 @@ impl ExternalCommandHookAdapter {
                     "hook adapter `{}` timed out after {:?}; stdout=`{}` stderr=`{}`",
                     self.command.display(),
                     self.timeout,
-                    stdout,
-                    stderr
+                    redact_diagnostic(&stdout),
+                    redact_diagnostic(&stderr)
                 );
             }
 
@@ -283,8 +437,8 @@ impl ExternalCommandHookAdapter {
                 "hook adapter `{}` exited with status {:?}; stdout=`{}` stderr=`{}`",
                 self.command.display(),
                 status.code(),
-                stdout,
-                stderr
+                redact_diagnostic(&stdout),
+                redact_diagnostic(&stderr)
             );
         }
 
@@ -468,7 +622,15 @@ impl HookShell {
 
         let (adapter, adapter_state): (Arc<dyn HookAdapter>, HookAdapterState) =
             match config.command {
-                Some(command) if !command.trim().is_empty() && config.enabled => {
+                Some(ref command) if !command.trim().is_empty() && config.enabled => {
+                    if !config.is_trusted(command) {
+                        tracing::warn!(
+                            command = %command,
+                            "hook adapter '{}' is not explicitly trusted; set `trusted = true` in volva.json to suppress this warning (cortina adapters are implicitly trusted)",
+                            command
+                        );
+                    }
+                    let command = command.clone();
                     let args = config.args.clone();
                     let adapter = ExternalCommandHookAdapter::new(
                         HookAdapterCommand::new(command.clone(), args.clone()),
@@ -623,6 +785,7 @@ mod tests {
             command: Some("/usr/local/bin/cortina-hook-adapter".to_string()),
             args: Vec::new(),
             timeout_ms: 30_000,
+            trusted: false,
         });
 
         assert_eq!(
@@ -641,6 +804,7 @@ mod tests {
             command: None,
             args: Vec::new(),
             timeout_ms: 30_000,
+            trusted: false,
         });
 
         assert_eq!(
@@ -656,6 +820,7 @@ mod tests {
             command: Some("/usr/bin/true".to_string()),
             args: Vec::new(),
             timeout_ms: 0,
+            trusted: false,
         });
 
         // Verify that the adapter was created (which means timeout was valid after clamping)
@@ -672,6 +837,7 @@ mod tests {
             command: Some("/usr/bin/true".to_string()),
             args: Vec::new(),
             timeout_ms: 50_000,
+            trusted: false,
         });
 
         // Verify that the adapter was created (which means timeout was clamped to 30000)
@@ -695,6 +861,7 @@ mod tests {
             command: Some(command_path.to_string_lossy().to_string()),
             args: Vec::new(),
             timeout_ms: 30_000,
+            trusted: false,
         });
         shell.emit(
             HookPhase::BeforePromptSend,
@@ -738,6 +905,7 @@ mod tests {
             command: Some(command_path.to_string_lossy().to_string()),
             args: Vec::new(),
             timeout_ms: 30_000,
+            trusted: false,
         });
 
         shell.emit(
@@ -777,6 +945,7 @@ mod tests {
                 command: Some(command_path.to_string_lossy().to_string()),
                 args: Vec::new(),
                 timeout_ms: 30_000,
+                trusted: false,
             },
             Duration::from_millis(50),
         );
@@ -828,6 +997,7 @@ mod tests {
                 "hook-event".to_string(),
             ],
             timeout_ms: 30_000,
+            trusted: false,
         });
 
         shell.emit(
@@ -857,6 +1027,98 @@ mod tests {
         let value: Value = serde_json::from_str(&payload)
             .unwrap_or_else(|error| panic!("payload should be JSON: {error}"));
         assert_eq!(value["phase"], "session_start");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hook_adapter_env_stripped_does_not_pass_api_keys_to_subprocess() {
+        // Write a script that dumps the full environment to a file.
+        // The hook adapter subprocess runs with env_clear() + allowlist only,
+        // so even if ANTHROPIC_API_KEY is set in the parent process, it must
+        // not appear in the child's environment.
+        let env_dump_path = unique_temp_path("hook-adapter-env.txt");
+        let command_path = write_hook_script(&format!(
+            "#!/bin/sh\nenv > \"{}\"\n",
+            shell_quote(env_dump_path.as_path())
+        ));
+
+        let shell = HookShell::configured(HookAdapterConfig {
+            enabled: true,
+            command: Some(command_path.to_string_lossy().to_string()),
+            args: Vec::new(),
+            timeout_ms: 30_000,
+            trusted: false,
+        });
+        shell.emit(
+            HookPhase::SessionStart,
+            HookContext {
+                backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
+                cwd: env::current_dir().expect("current dir should be available"),
+                prompt_text: "env test".to_string(),
+                prompt_summary: "env test".to_string(),
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                error: None,
+            },
+        );
+
+        let env_dump = fs::read_to_string(&env_dump_path)
+            .unwrap_or_else(|e| panic!("hook adapter should dump env: {e}"));
+
+        // The allowlist does not contain any secret key patterns.
+        // Verify the most common secret variable names are absent.
+        assert!(
+            !env_dump.contains("ANTHROPIC_API_KEY"),
+            "ANTHROPIC_API_KEY must not appear in the hook adapter environment; dump:\n{env_dump}"
+        );
+        assert!(
+            !env_dump.contains("OPENAI_API_KEY"),
+            "OPENAI_API_KEY must not appear in the hook adapter environment"
+        );
+
+        // Verify that allowed vars CAN appear (PATH is universally present).
+        // This confirms env_clear + re-add works rather than env_clear alone.
+        assert!(
+            env_dump.contains("PATH="),
+            "PATH should be present in the hook adapter environment; dump:\n{env_dump}"
+        );
+    }
+
+    #[test]
+    fn hook_adapter_config_is_trusted_for_cortina_adapter_regardless_of_trusted_field() {
+        let config = HookAdapterConfig {
+            enabled: true,
+            command: Some("/usr/local/bin/cortina".to_string()),
+            args: Vec::new(),
+            timeout_ms: 30_000,
+            trusted: false,
+        };
+
+        assert!(
+            config.is_trusted("cortina"),
+            "cortina adapter should be implicitly trusted"
+        );
+        assert!(
+            config.is_trusted("/usr/local/bin/cortina-hook-adapter"),
+            "cortina prefix in name should be implicitly trusted"
+        );
+        assert!(
+            !config.is_trusted("my-custom-hook"),
+            "unknown adapter without trusted:true should not be trusted"
+        );
+
+        let trusted_config = HookAdapterConfig {
+            trusted: true,
+            ..config
+        };
+        assert!(
+            trusted_config.is_trusted("my-custom-hook"),
+            "adapter with trusted:true should be trusted regardless of name"
+        );
     }
 
     #[cfg(unix)]

@@ -39,13 +39,42 @@ fn provider_tokens_path_required(provider: AuthProvider) -> Result<PathBuf> {
     Ok(provider_tokens_path_from_base(&home, provider))
 }
 
+/// Check that a credential file's permissions are not overly permissive.
+///
+/// Returns `Ok(())` if permissions are acceptable (no group/other read or write
+/// bits set), `Err` if they should be rejected.  A file written by
+/// `save_tokens()` always has mode `0o600`; a more permissive mode indicates
+/// manual tampering or a filesystem issue and must not be silently trusted.
+#[cfg(unix)]
+pub(crate) fn check_credential_permissions(path: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = fs::metadata(path)
+        .with_context(|| format!("failed to read metadata for {}", path.display()))?
+        .permissions()
+        .mode();
+    if mode & 0o077 != 0 {
+        anyhow::bail!(
+            "credential file {} has overly permissive permissions (mode {:04o}); \
+             expected 0o600 — fix with: chmod 600 {}",
+            path.display(),
+            mode & 0o777,
+            path.display(),
+        );
+    }
+    Ok(())
+}
+
 pub fn load_tokens(provider: AuthProvider) -> Result<Option<StoredAnthropicTokens>> {
     let path = provider_tokens_path_required(provider)?;
     if !path.exists() {
         return Ok(None);
     }
 
-    let raw = fs::read_to_string(path)?;
+    // On Unix, reject credential files that are readable by group or other.
+    #[cfg(unix)]
+    check_credential_permissions(&path)?;
+
+    let raw = fs::read_to_string(&path)?;
     let tokens = serde_json::from_str::<StoredAnthropicTokens>(&raw)?;
     Ok(Some(tokens))
 }
@@ -145,6 +174,16 @@ mod tests {
 
     use super::*;
 
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("volva-auth-{label}-{unique}"));
+        fs::create_dir_all(&dir).expect("temp dir should exist");
+        dir
+    }
+
     #[test]
     fn anthropic_tokens_path_is_provider_namespaced() {
         let path =
@@ -157,12 +196,7 @@ mod tests {
 
     #[test]
     fn atomic_write_replaces_target_without_leaving_temporary_file() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let temp_dir = std::env::temp_dir().join(format!("volva-auth-storage-{unique}"));
-        fs::create_dir_all(&temp_dir).expect("temp dir should exist");
+        let temp_dir = unique_temp_dir("storage");
         let path = temp_dir.join("anthropic.json");
 
         write_secure_json(&path, br#"{"ok":true}"#).expect("write should succeed");
@@ -171,6 +205,34 @@ mod tests {
         assert!(raw.contains(r#""ok":true"#));
 
         let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_tokens_rejects_permissive_credential_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = unique_temp_dir("perm-check");
+        let path = temp_dir.join("creds.json");
+
+        fs::write(&path, r#"{"access_token":"fake"}"#).expect("write");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
+            .expect("set permissions");
+
+        // Directly call the production helper that load_tokens() uses
+        let err = check_credential_permissions(&path)
+            .expect_err("0o644 file should be rejected");
+        assert!(
+            err.to_string().contains("permissive"),
+            "error should mention permissions: {err}"
+        );
+
+        // 0o600 should pass
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .expect("set permissions");
+        check_credential_permissions(&path).expect("0o600 file should be accepted");
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

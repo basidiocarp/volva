@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, params};
+use tracing::error;
 use volva_core::{Checkpoint, CheckpointError, CheckpointSaver};
 
 /// SQLite-backed checkpoint saver.
@@ -66,12 +67,38 @@ impl SqliteCheckpointSaver {
             0
         };
 
+        let checkpoint_id: String = row.get(0)?;
+
+        let state = serde_json::from_str(&state_str).map_err(|err| {
+            error!(
+                checkpoint_id = %checkpoint_id,
+                "corrupted checkpoint JSON in state field: {err}"
+            );
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(err),
+            )
+        })?;
+
+        let metadata = serde_json::from_str(&metadata_str).map_err(|err| {
+            error!(
+                checkpoint_id = %checkpoint_id,
+                "corrupted checkpoint JSON in metadata field: {err}"
+            );
+            rusqlite::Error::FromSqlConversionFailure(
+                4,
+                rusqlite::types::Type::Text,
+                Box::new(err),
+            )
+        })?;
+
         Ok(Checkpoint {
-            checkpoint_id: row.get(0)?,
+            checkpoint_id,
             thread_id: row.get(1)?,
             version,
-            state: serde_json::from_str(&state_str).unwrap_or(serde_json::json!({})),
-            metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+            state,
+            metadata,
             created_at: row.get(5)?,
         })
     }
@@ -263,5 +290,49 @@ mod tests {
 
         let loaded = saver.load("missing-thread").expect("should load");
         assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn corrupt_checkpoint_state_json_returns_error_instead_of_silent_empty_state() {
+        // Insert a row with invalid JSON in the state column directly via the
+        // underlying connection, bypassing the typed save() path.
+        let saver = SqliteCheckpointSaver::new_in_memory().expect("should create in-memory saver");
+
+        {
+            let conn = saver.conn.lock().expect("lock");
+            conn.execute(
+                "INSERT INTO checkpoints (checkpoint_id, thread_id, version, state, metadata, created_at) \
+                 VALUES ('cp-corrupt', 'thread-corrupt', 1, 'NOT VALID JSON !!!', '{}', 0)",
+                [],
+            )
+            .expect("should insert corrupt row");
+        }
+
+        let result = saver.load("thread-corrupt");
+        assert!(
+            result.is_err(),
+            "loading a checkpoint with corrupted state JSON must return Err, not silent empty state"
+        );
+    }
+
+    #[test]
+    fn corrupt_checkpoint_metadata_json_returns_error() {
+        let saver = SqliteCheckpointSaver::new_in_memory().expect("should create in-memory saver");
+
+        {
+            let conn = saver.conn.lock().expect("lock");
+            conn.execute(
+                "INSERT INTO checkpoints (checkpoint_id, thread_id, version, state, metadata, created_at) \
+                 VALUES ('cp-corrupt-meta', 'thread-corrupt-meta', 1, '{}', 'NOT VALID JSON !!!', 0)",
+                [],
+            )
+            .expect("should insert corrupt row");
+        }
+
+        let result = saver.load("thread-corrupt-meta");
+        assert!(
+            result.is_err(),
+            "loading a checkpoint with corrupted metadata JSON must return Err"
+        );
     }
 }

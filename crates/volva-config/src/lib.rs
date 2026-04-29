@@ -52,6 +52,13 @@ pub struct HookAdapterConfig {
     pub args: Vec<String>,
     #[serde(default = "default_hook_adapter_timeout_ms")]
     pub timeout_ms: u64,
+    /// Whether this adapter is explicitly trusted to receive hook events.
+    ///
+    /// Adapters whose command name contains "cortina" are implicitly trusted
+    /// regardless of this field. All other project-local adapters must set
+    /// `trusted: true` to suppress the runtime warning.
+    #[serde(default)]
+    pub trusted: bool,
 }
 
 impl HookAdapterConfig {
@@ -60,6 +67,15 @@ impl HookAdapterConfig {
     pub fn with_clamped_timeout(mut self) -> Self {
         self.timeout_ms = self.timeout_ms.clamp(1, 30_000);
         self
+    }
+
+    /// Return `true` if this adapter is trusted.
+    ///
+    /// An adapter is trusted when `trusted: true` is set in config, OR when the
+    /// adapter command name contains `"cortina"` (the recognized ecosystem adapter).
+    #[must_use]
+    pub fn is_trusted(&self, adapter_name: &str) -> bool {
+        self.trusted || adapter_name.contains("cortina")
     }
 }
 
@@ -70,6 +86,7 @@ impl Default for HookAdapterConfig {
             command: None,
             args: Vec::new(),
             timeout_ms: default_hook_adapter_timeout_ms(),
+            trusted: false,
         }
     }
 }
@@ -429,6 +446,7 @@ mod tests {
             command: Some("cortina".to_string()),
             args: Vec::new(),
             timeout_ms: 0,
+            trusted: false,
         };
 
         let clamped = config.with_clamped_timeout();
@@ -442,6 +460,7 @@ mod tests {
             command: Some("cortina".to_string()),
             args: Vec::new(),
             timeout_ms: 50_000,
+            trusted: false,
         };
 
         let clamped = config.with_clamped_timeout();
@@ -455,6 +474,7 @@ mod tests {
             command: Some("cortina".to_string()),
             args: Vec::new(),
             timeout_ms: 15_000,
+            trusted: false,
         };
 
         let clamped = config.with_clamped_timeout();
