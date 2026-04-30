@@ -19,6 +19,7 @@ const USER_PROMPT_HEADER: &str = "[user-prompt]";
 const HOST_NOTE: &str = "source: host-provided context from volva";
 const HYPHAE_PROTOCOL_COMMAND: &str = "hyphae";
 const HYPHAE_PROTOCOL_RESOURCE_URI: &str = "hyphae://protocol/current";
+const HYPHAE_PROTOCOL_SCHEMA_VERSION: &str = "1.0";
 const MEMORY_PROTOCOL_TIMEOUT: Duration = Duration::from_millis(250);
 const MEMORY_PROTOCOL_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const SESSION_RECALL_TIMEOUT: Duration = Duration::from_millis(500);
@@ -147,6 +148,9 @@ pub(crate) fn assemble_prompt_with_memory_and_recall(
     PreparedPrompt { final_prompt }
 }
 
+// Only fields needed for prompt assembly are deserialized here.
+// The full contract (including scoped_identity, recall.when, store.when,
+// store.shared_topics) is documented in septa/hyphae-protocol-v1.schema.json.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct MemoryProtocolSurface {
     schema_version: String,
@@ -220,6 +224,14 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
                 stdout_handle.read_to_end(&mut stdout_bytes).ok()?;
                 let stdout = String::from_utf8(stdout_bytes).ok()?;
                 let surface = serde_json::from_str::<MemoryProtocolSurface>(stdout.trim()).ok()?;
+                if surface.schema_version != HYPHAE_PROTOCOL_SCHEMA_VERSION {
+                    tracing::warn!(
+                        got = surface.schema_version,
+                        expected = HYPHAE_PROTOCOL_SCHEMA_VERSION,
+                        "volva: hyphae protocol schema version mismatch — context injection skipped"
+                    );
+                    return None;
+                }
                 return Some(format_memory_protocol_block(&surface));
             }
             Ok(None) => {}
