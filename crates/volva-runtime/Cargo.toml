@@ -14,7 +14,7 @@ spore.workspace = true
 tracing.workspace = true
 tempfile = "3"
 thiserror = "2"
-twox-hash = "1"
+twox-hash = "2"
 volva-adapters = { path = "../volva-adapters" }
 volva-auth = { path = "../volva-auth" }
 volva-bridge = { path = "../volva-bridge" }
