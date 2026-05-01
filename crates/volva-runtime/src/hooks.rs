@@ -745,6 +745,7 @@ fn summarize_prompt(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::path::Path;
 
     #[cfg(unix)]
@@ -759,6 +760,7 @@ mod tests {
 
     #[cfg(unix)]
     use serde_json::Value;
+    #[cfg(unix)]
     use volva_core::{
         BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
         ExecutionSessionState, WorkspaceBinding,

@@ -116,6 +116,7 @@ fn build_args(prepared_prompt: &PreparedPrompt) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::time::Duration;
 
     #[cfg(unix)]
@@ -129,7 +130,9 @@ mod tests {
 
     use crate::{BackendRunRequest, context};
 
-    use super::{build_args, run, run_with_timeout};
+    use super::{build_args, run};
+    #[cfg(unix)]
+    use super::run_with_timeout;
 
     fn test_session(workspace_root: &str) -> ExecutionSessionIdentity {
         ExecutionSessionIdentity::new(
