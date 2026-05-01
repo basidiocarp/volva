@@ -595,6 +595,7 @@ mod tests {
         render_backend_status,
     };
     use volva_config::VolvaConfig;
+    #[cfg(not(windows))]
     use volva_core::BackendKind;
     use volva_runtime::RuntimeBootstrap;
 
