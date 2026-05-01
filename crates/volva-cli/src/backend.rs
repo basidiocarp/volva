@@ -618,6 +618,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn backend_doctor_reports_readiness_and_resolution() {
         let mut config = VolvaConfig::default();
@@ -663,6 +664,7 @@ mod tests {
         assert!(lines.contains(&"hook_delivery_ready: unknown".to_string()));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn backend_doctor_reports_unsupported_backend_as_not_ready() {
         let mut config = VolvaConfig::default();
@@ -831,6 +833,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn command_resolved_accepts_real_binary_path() {
         assert!(command_resolved("/bin/echo"));
