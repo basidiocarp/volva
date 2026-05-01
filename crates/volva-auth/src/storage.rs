@@ -217,20 +217,17 @@ mod tests {
         let path = temp_dir.join("creds.json");
 
         fs::write(&path, r#"{"access_token":"fake"}"#).expect("write");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))
-            .expect("set permissions");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("set permissions");
 
         // Directly call the production helper that load_tokens() uses
-        let err = check_credential_permissions(&path)
-            .expect_err("0o644 file should be rejected");
+        let err = check_credential_permissions(&path).expect_err("0o644 file should be rejected");
         assert!(
             err.to_string().contains("permissive"),
             "error should mention permissions: {err}"
         );
 
         // 0o600 should pass
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
-            .expect("set permissions");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("set permissions");
         check_credential_permissions(&path).expect("0o600 file should be accepted");
 
         let _ = fs::remove_dir_all(&temp_dir);

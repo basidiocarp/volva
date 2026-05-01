@@ -48,8 +48,7 @@ pub fn handle_chat(command: ChatCommand, mode: OperationMode) -> Result<()> {
             let canopy_ok = std::process::Command::new("canopy")
                 .arg("--version")
                 .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+                .is_ok_and(|o| o.status.success());
             if !canopy_ok {
                 bail!(
                     "orchestration mode requires canopy — start canopy first or use --mode baseline"

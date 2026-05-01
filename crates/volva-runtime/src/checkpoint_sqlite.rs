@@ -74,11 +74,7 @@ impl SqliteCheckpointSaver {
                 checkpoint_id = %checkpoint_id,
                 "corrupted checkpoint JSON in state field: {err}"
             );
-            rusqlite::Error::FromSqlConversionFailure(
-                3,
-                rusqlite::types::Type::Text,
-                Box::new(err),
-            )
+            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(err))
         })?;
 
         let metadata = serde_json::from_str(&metadata_str).map_err(|err| {
@@ -86,11 +82,7 @@ impl SqliteCheckpointSaver {
                 checkpoint_id = %checkpoint_id,
                 "corrupted checkpoint JSON in metadata field: {err}"
             );
-            rusqlite::Error::FromSqlConversionFailure(
-                4,
-                rusqlite::types::Type::Text,
-                Box::new(err),
-            )
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(err))
         })?;
 
         Ok(Checkpoint {

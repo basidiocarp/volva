@@ -29,7 +29,12 @@ pub fn run(
     request: &BackendRunRequest,
     prepared_prompt: &PreparedPrompt,
 ) -> Result<BackendRunResult> {
-    run_with_timeout(command, request, prepared_prompt, BACKEND_SUBPROCESS_TIMEOUT)
+    run_with_timeout(
+        command,
+        request,
+        prepared_prompt,
+        BACKEND_SUBPROCESS_TIMEOUT,
+    )
 }
 
 fn run_with_timeout(
@@ -95,12 +100,8 @@ fn run_with_timeout(
     };
 
     // Collect the buffered output; the reader threads finish once the child exits.
-    let stdout_bytes = stdout_rx
-        .recv()
-        .unwrap_or_default();
-    let stderr_bytes = stderr_rx
-        .recv()
-        .unwrap_or_default();
+    let stdout_bytes = stdout_rx.recv().unwrap_or_default();
+    let stderr_bytes = stderr_rx.recv().unwrap_or_default();
 
     Ok(BackendRunResult {
         stdout: String::from_utf8_lossy(&stdout_bytes).trim().to_string(),
@@ -248,7 +249,9 @@ mod tests {
         };
 
         let error = run_with_timeout(
-            script_path.to_str().expect("script path should be valid UTF-8"),
+            script_path
+                .to_str()
+                .expect("script path should be valid UTF-8"),
             &request,
             &prepared,
             Duration::from_secs(3),

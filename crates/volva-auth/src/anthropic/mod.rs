@@ -16,7 +16,7 @@ use self::callback_server::CallbackServer;
 use self::oauth::AuthorizationUrls;
 use self::pkce::PkceParameters;
 
-const DEFAULT_CALLBACK_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_CALLBACK_TIMEOUT: Duration = Duration::from_mins(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicLoginCompletion {
@@ -168,6 +168,6 @@ mod tests {
         };
 
         assert!(request.open_browser);
-        assert_eq!(DEFAULT_CALLBACK_TIMEOUT, Duration::from_secs(120));
+        assert_eq!(DEFAULT_CALLBACK_TIMEOUT, Duration::from_mins(2));
     }
 }

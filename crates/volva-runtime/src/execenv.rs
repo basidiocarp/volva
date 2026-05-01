@@ -356,8 +356,7 @@ impl ExecEnv {
     fn write_gc_metadata(&self) -> Result<()> {
         let created_at_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
 
         let metadata = GcMetadata {
             created_at_secs,
@@ -423,8 +422,7 @@ fn build_working_dir_path(_provider: Provider, task_id: &str, base_dir: Option<&
 
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_millis());
 
     // Sanitize the task_id so it is safe to use as a directory name component.
     let safe_task_id: String = task_id

@@ -568,8 +568,7 @@ fn command_launchable(path: &Path) -> bool {
     path.is_file()
         && path
             .metadata()
-            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
+            .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]

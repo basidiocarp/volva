@@ -620,34 +620,35 @@ impl HookShell {
     fn from_config(config: HookAdapterConfig, timeout: Duration) -> Self {
         let diagnostics = Arc::new(Mutex::new(Vec::new()));
 
-        let (adapter, adapter_state): (Arc<dyn HookAdapter>, HookAdapterState) =
-            match config.command {
-                Some(ref command) if !command.trim().is_empty() && config.enabled => {
-                    if !config.is_trusted(command) {
-                        tracing::warn!(
-                            command = %command,
-                            "hook adapter '{}' is not explicitly trusted; set `trusted = true` in volva.json to suppress this warning (cortina adapters are implicitly trusted)",
-                            command
-                        );
-                    }
-                    let command = command.clone();
-                    let args = config.args.clone();
-                    let adapter = ExternalCommandHookAdapter::new(
-                        HookAdapterCommand::new(command.clone(), args.clone()),
-                        diagnostics.clone(),
-                        timeout,
+        let (adapter, adapter_state): (Arc<dyn HookAdapter>, HookAdapterState) = match config
+            .command
+        {
+            Some(ref command) if !command.trim().is_empty() && config.enabled => {
+                if !config.is_trusted(command) {
+                    tracing::warn!(
+                        command = %command,
+                        "hook adapter '{}' is not explicitly trusted; set `trusted = true` in volva.json to suppress this warning (cortina adapters are implicitly trusted)",
+                        command
                     );
-                    (
-                        Arc::new(adapter),
-                        HookAdapterState::ConfiguredExternal { command, args },
-                    )
                 }
-                command if config.enabled => (
-                    Arc::new(NoopHookAdapter),
-                    HookAdapterState::ConfiguredNoop { command },
-                ),
-                _ => (Arc::new(NoopHookAdapter), HookAdapterState::Disabled),
-            };
+                let command = command.clone();
+                let args = config.args.clone();
+                let adapter = ExternalCommandHookAdapter::new(
+                    HookAdapterCommand::new(command.clone(), args.clone()),
+                    diagnostics.clone(),
+                    timeout,
+                );
+                (
+                    Arc::new(adapter),
+                    HookAdapterState::ConfiguredExternal { command, args },
+                )
+            }
+            command if config.enabled => (
+                Arc::new(NoopHookAdapter),
+                HookAdapterState::ConfiguredNoop { command },
+            ),
+            _ => (Arc::new(NoopHookAdapter), HookAdapterState::Disabled),
+        };
 
         Self {
             adapter,
