@@ -756,13 +756,34 @@ mod tests {
             Path::new("/tmp/volva-hook-health"),
         );
 
-        assert!(lines.contains(&"local_backend_ready: true".to_string()));
-        assert!(lines.contains(&"backend_ready: true".to_string()));
-        assert!(lines.contains(&"hook_delivery_probe: cortina-status-doctor".to_string()));
-        assert!(lines.contains(&"hook_delivery_ready: true".to_string()));
-        assert!(lines.contains(&"hook_delivery_seen_for_cwd: true".to_string()));
-        assert!(lines.contains(&"hook_delivery_event_count: 4".to_string()));
-        assert!(lines.contains(&"hook_delivery_events_valid_json: true".to_string()));
+        assert!(
+            lines.contains(&"local_backend_ready: true".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"backend_ready: true".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"hook_delivery_probe: cortina-status-doctor".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"hook_delivery_ready: true".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"hook_delivery_seen_for_cwd: true".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"hook_delivery_event_count: 4".to_string()),
+            "lines={lines:?}"
+        );
+        assert!(
+            lines.contains(&"hook_delivery_events_valid_json: true".to_string()),
+            "lines={lines:?}"
+        );
     }
 
     #[cfg(unix)]
