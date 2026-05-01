@@ -578,9 +578,12 @@ fn command_launchable(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    #[cfg(unix)]
     use std::{
         fs,
-        path::{Path, PathBuf},
+        path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
 

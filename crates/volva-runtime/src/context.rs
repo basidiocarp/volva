@@ -370,9 +370,13 @@ fn format_memory_protocol_block(surface: &MemoryProtocolSurface) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::fs;
+    #[cfg(unix)]
     use std::path::PathBuf;
+    #[cfg(unix)]
     use std::sync::Mutex;
+    #[cfg(unix)]
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use volva_config::VolvaConfig;

@@ -714,6 +714,7 @@ impl HookShell {
             .unwrap_or_default()
     }
 
+    #[cfg(unix)]
     #[must_use]
     pub(crate) fn diagnostics(&self) -> Vec<String> {
         self.diagnostics
@@ -744,23 +745,30 @@ fn summarize_prompt(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    #[cfg(unix)]
     use std::{
         env, fs,
-        path::{Path, PathBuf},
+        path::PathBuf,
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(unix)]
     use serde_json::Value;
     use volva_core::{
         BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
         ExecutionSessionState, WorkspaceBinding,
     };
 
-    use super::{HookAdapterConfig, HookAdapterState, HookContext, HookPhase, HookShell};
+    use super::{HookAdapterConfig, HookAdapterState, HookShell};
+    #[cfg(unix)]
+    use super::{HookContext, HookPhase};
 
+    #[cfg(unix)]
     fn test_session(cwd: &Path) -> ExecutionSessionIdentity {
         ExecutionSessionIdentity::new(
             ExecutionMode::Run,
