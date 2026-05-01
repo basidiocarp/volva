@@ -746,10 +746,12 @@ fn summarize_prompt(prompt: &str) -> String {
 mod tests {
     use std::{
         env, fs,
-        os::unix::fs::PermissionsExt,
         path::{Path, PathBuf},
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     use serde_json::Value;
     use volva_core::{
