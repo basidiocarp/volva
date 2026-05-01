@@ -532,7 +532,7 @@ fn command_candidate_paths(path: &Path) -> Vec<PathBuf> {
                 PathBuf::from(candidate)
             }));
         }
-        return candidates;
+        candidates
     }
 
     #[cfg(not(windows))]
