@@ -223,9 +223,12 @@ fn span_context_for_request(request: &BackendRunRequest) -> SpanContext {
 #[cfg(test)]
 mod tests {
     use super::RuntimeBootstrap;
+    #[cfg(not(windows))]
     use std::fs;
+    #[cfg(not(windows))]
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+    #[cfg(not(windows))]
     use std::time::{SystemTime, UNIX_EPOCH};
     use volva_config::VolvaConfig;
     use volva_core::{
@@ -259,6 +262,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(windows))]
     fn unique_vendor_dir(label: &str) -> PathBuf {
         let millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -325,6 +329,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_success_hooks_in_order() {
         let mut config = VolvaConfig::default();
@@ -358,6 +363,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_passes_assembled_prompt_to_backend_command() {
         let mut config = VolvaConfig::default();
@@ -378,6 +384,7 @@ mod tests {
         assert_ne!(result.stdout, "-p show status");
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_assembled_prompt_in_hook_context() {
         let mut config = VolvaConfig::default();
@@ -413,6 +420,7 @@ mod tests {
         assert_ne!(before_prompt.context.prompt_text, "show status");
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_forwards_hooks_to_adapter_in_order() {
         let mut config = VolvaConfig::default();
@@ -479,6 +487,7 @@ mod tests {
         assert_eq!(events[2].context.error, Some(error.to_string()));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_failure_hooks_for_nonzero_exit() {
         let mut config = VolvaConfig::default();
@@ -534,6 +543,7 @@ mod tests {
         assert!(runtime.hook_events().is_empty());
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_persists_latest_execution_session_snapshot() {
         let vendor_dir = unique_vendor_dir("execution-session");

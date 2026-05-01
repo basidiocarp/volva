@@ -232,6 +232,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn write_with_staleness_check_applies_edit() {
         let f = write_temp_file("alpha\nbeta\ngamma\n");

@@ -193,6 +193,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn successful_command_captures_stdout_and_exit_code() {
         let request = test_request("headless ok", "/tmp");
@@ -209,6 +210,7 @@ mod tests {
         assert_eq!(result.stderr, "");
     }
 
+    #[cfg(unix)]
     #[test]
     fn launched_command_can_exit_nonzero() {
         let request = test_request("headless fail", "/tmp");
