@@ -796,11 +796,10 @@ mod tests {
     #[test]
     fn backend_doctor_respects_hook_timeout_for_cortina_probe() {
         let script = unique_temp_path("slow-cortina.sh");
-        fs::write(
-            &script,
-            "#!/bin/sh\nsleep 1\nprintf '%s' '{\"volva_hook_event_count\":1}'\n",
-        )
-        .expect("slow fake cortina script should be writable");
+        // Pure-shell busy-wait with no external dependencies so PATH issues
+        // can't cause an immediate exit before the timeout fires.
+        fs::write(&script, "#!/bin/sh\nwhile :; do :; done\n")
+            .expect("slow fake cortina script should be writable");
 
         let mut permissions = fs::metadata(&script)
             .expect("slow fake cortina metadata should be available")
@@ -817,7 +816,9 @@ mod tests {
             "volva".to_string(),
             "hook-event".to_string(),
         ];
-        config.hook_adapter.timeout_ms = 50;
+        // 500 ms is well above any process-spawn overhead while still much
+        // shorter than any foreseeable runtime of the infinite-loop script.
+        config.hook_adapter.timeout_ms = 500;
 
         let lines = render_backend_doctor(
             &RuntimeBootstrap::new(config),
