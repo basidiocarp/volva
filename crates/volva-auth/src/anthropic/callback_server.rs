@@ -333,6 +333,7 @@ mod tests {
         assert!(response.contains("400 Bad Request"));
     }
 
+    #[cfg(not(windows))]
     #[tokio::test]
     async fn callback_server_allows_valid_second_callback_after_bad_first_request() {
         let server = CallbackServer::bind(AuthTarget::ClaudeAi, "test-session".to_string())

@@ -353,6 +353,7 @@ mod tests {
         assert!(
             provider_storage_path()
                 .to_string_lossy()
+                .replace('\\', "/")
                 .ends_with(".volva/auth/anthropic.json")
         );
         assert!(success_redirect_url(AuthTarget::ClaudeAi).contains("oauth/code/success"));
