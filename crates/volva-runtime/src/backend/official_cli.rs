@@ -130,9 +130,9 @@ mod tests {
 
     use crate::{BackendRunRequest, context};
 
-    use super::{build_args, run};
     #[cfg(unix)]
     use super::run_with_timeout;
+    use super::{build_args, run};
 
     fn test_session(workspace_root: &str) -> ExecutionSessionIdentity {
         ExecutionSessionIdentity::new(
