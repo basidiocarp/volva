@@ -1,3 +1,4 @@
+mod api;
 mod official_cli;
 
 use anyhow::{Result, bail};
@@ -31,7 +32,7 @@ impl BackendRunResult {
 
 pub fn validate_request(request: &BackendRunRequest) -> Result<()> {
     match request.session.backend {
-        BackendKind::OfficialCli => Ok(()),
+        BackendKind::OfficialCli | BackendKind::AnthropicApi => Ok(()),
         _ => bail!(
             "backend `{}` is not available through `volva run` yet; use `volva chat` for the native API path",
             request.session.backend
@@ -50,6 +51,7 @@ pub fn run(
         BackendKind::OfficialCli => {
             official_cli::run(&config.backend.command, request, prepared_prompt)
         }
+        BackendKind::AnthropicApi => api::run(config, request, prepared_prompt),
         _ => bail!(
             "backend `{}` is not supported by this run path",
             request.session.backend
@@ -65,7 +67,7 @@ pub fn session_surface_for(
     BackendSessionSurface {
         backend: session.backend,
         backend_command: config.backend.command.clone(),
-        run_supported: matches!(config.backend.kind, BackendKind::OfficialCli),
+        run_supported: matches!(config.backend.kind, BackendKind::OfficialCli | BackendKind::AnthropicApi),
         session,
     }
 }

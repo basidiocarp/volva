@@ -144,6 +144,16 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
     let hook_delivery_ready = hook_delivery_health.ready_for_supported_path();
     let backend_ready = local_backend_ready && hook_delivery_ready.unwrap_or(true);
 
+    // Check API auth status if backend is AnthropicApi
+    let api_auth_status_line = if backend_status.kind == volva_core::BackendKind::AnthropicApi {
+        match volva_auth::resolve_credential() {
+            Some(cred) => format!("api_auth_status: resolved (source={})", cred.source),
+            None => "api_auth_status: not_resolved".to_string(),
+        }
+    } else {
+        "api_auth_status: not_applicable".to_string()
+    };
+
     let mut lines = vec![
         format!("local_backend_ready: {local_backend_ready}"),
         format!("backend_ready: {backend_ready}"),
@@ -151,6 +161,7 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
         format!("backend_supported_by_run: {backend_supported_by_run}"),
         format!("backend_command: {}", backend_status.command),
         format!("backend_command_resolved: {backend_command_resolved}"),
+        api_auth_status_line,
         format!("hook_adapter: {hook_adapter_state}"),
         format!("hook_adapter_command_line: {hook_adapter_command}"),
         format!("hook_adapter_command_resolved: {hook_adapter_command_resolved}"),
@@ -213,7 +224,7 @@ fn hook_adapter_command_line(runtime: &RuntimeBootstrap) -> String {
 }
 
 fn backend_supported_by_run(kind: BackendKind) -> bool {
-    matches!(kind, BackendKind::OfficialCli)
+    matches!(kind, BackendKind::OfficialCli | BackendKind::AnthropicApi)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -667,19 +678,16 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn backend_doctor_reports_unsupported_backend_as_not_ready() {
+    fn backend_doctor_reports_anthropic_api_as_supported() {
         let mut config = VolvaConfig::default();
         config.backend.kind = BackendKind::AnthropicApi;
         config.backend.command = "/bin/echo".to_string();
 
         let lines = render_backend_doctor(&RuntimeBootstrap::new(config), Path::new("/tmp"));
 
-        assert!(lines.contains(&"local_backend_ready: false".to_string()));
-        assert!(lines.contains(&"backend_ready: false".to_string()));
-        assert!(lines.contains(&"backend_supported_by_run: false".to_string()));
-        assert!(lines.contains(&"backend_command_resolved: true".to_string()));
-        assert!(lines.contains(&"hook_delivery_probe: disabled".to_string()));
-        assert!(lines.contains(&"hook_delivery_ready: unknown".to_string()));
+        assert!(lines.contains(&"backend_supported_by_run: true".to_string()));
+        assert!(lines.contains(&"backend: anthropic-api".to_string()));
+        assert!(lines.iter().any(|l| l.starts_with("api_auth_status:")));
     }
 
     #[test]

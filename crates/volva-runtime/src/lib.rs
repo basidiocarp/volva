@@ -522,25 +522,31 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_run_backend_does_not_emit_hooks() {
+    fn native_api_backend_is_now_supported() {
         let runtime =
             RuntimeBootstrap::with_hook_shell(VolvaConfig::default(), HookShell::recording());
 
-        let error = runtime
-            .run_backend(&test_request(
-                "headless fail",
-                "/tmp",
-                BackendKind::AnthropicApi,
-            ))
-            .expect_err("unsupported backend should fail before hook dispatch");
+        // AnthropicApi backend should be accepted by validate_request, even though
+        // it may fail later due to missing API key. The important thing is that it
+        // passes validation and hook dispatch is initiated.
+        let result = runtime.run_backend(&test_request(
+            "test prompt",
+            "/tmp",
+            BackendKind::AnthropicApi,
+        ));
 
-        assert!(
-            error
-                .to_string()
-                .contains("not available through `volva run` yet"),
-            "unexpected error: {error}"
-        );
-        assert!(runtime.hook_events().is_empty());
+        // Will fail due to missing API key, but the validation should pass.
+        // We're checking that AnthropicApi is no longer rejected at the validation stage.
+        match result {
+            Err(e) => {
+                assert!(
+                    e.to_string().contains("failed to resolve API key")
+                        || e.to_string().contains("No API key found"),
+                    "AnthropicApi should fail at API resolution, not validation: {e}"
+                );
+            }
+            Ok(_) => panic!("without a real API key, this should fail"),
+        }
     }
 
     #[cfg(not(windows))]

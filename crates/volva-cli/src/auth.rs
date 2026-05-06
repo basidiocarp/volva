@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use spore::logging::{SpanContext, workflow_span};
 use tokio::runtime::Runtime;
@@ -19,6 +19,7 @@ pub enum AuthSubcommand {
     Login(LoginCommand),
     Logout(LogoutCommand),
     Status(StatusCommand),
+    Setup(SetupCommand),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -56,6 +57,9 @@ pub struct StatusCommand {
     pub json: bool,
 }
 
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct SetupCommand {}
+
 pub fn handle_auth(auth: AuthCommand) -> Result<()> {
     let correlation_id = Uuid::new_v4().to_string();
     let span_context = auth_span_context().with_session_id(correlation_id.clone());
@@ -64,6 +68,7 @@ pub fn handle_auth(auth: AuthCommand) -> Result<()> {
         AuthSubcommand::Login(command) => handle_login(command, &span_context, correlation_id),
         AuthSubcommand::Logout(command) => handle_logout(command, &span_context),
         AuthSubcommand::Status(command) => handle_status(command, &span_context),
+        AuthSubcommand::Setup(command) => handle_setup(command, &span_context),
     }
 }
 
@@ -93,6 +98,43 @@ fn handle_status(command: StatusCommand, span_context: &SpanContext) -> Result<(
     let _workflow_span = workflow_span("auth_status", span_context).entered();
     let status = auth_status(AuthProvider::Anthropic)?;
     render_status(&status, command.json)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn handle_setup(_command: SetupCommand, span_context: &SpanContext) -> Result<()> {
+    let _workflow_span = workflow_span("auth_setup", span_context).entered();
+
+    println!("Enter your Anthropic API key:");
+    println!("(This will be stored securely in your OS keychain)");
+    println!();
+
+    let api_key = read_api_key_from_stdin()?;
+
+    if api_key.is_empty() {
+        anyhow::bail!("API key cannot be empty");
+    }
+
+    volva_auth::ApiKeyResolver::store_in_keychain(&api_key)?;
+
+    println!();
+    println!("Successfully stored API key in OS keychain.");
+    println!("Your API key is now available for: volva chat, volva run --backend api, and other operations.");
+
+    Ok(())
+}
+
+fn read_api_key_from_stdin() -> Result<String> {
+    use std::io::{self, BufRead};
+
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+    let mut input = String::new();
+
+    handle
+        .read_line(&mut input)
+        .context("failed to read API key from stdin")?;
+
+    Ok(input.trim().to_string())
 }
 
 #[allow(clippy::needless_pass_by_value)]
