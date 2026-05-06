@@ -158,7 +158,10 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
     let active_session_line = match runtime.load_execution_session() {
         Ok(Some(session)) => {
             use volva_core::ExecutionSessionState;
-            if matches!(session.session.state, ExecutionSessionState::Finished) {
+            if matches!(
+                session.session.state,
+                ExecutionSessionState::Finished | ExecutionSessionState::Planned
+            ) {
                 "active_workspace_session: none".to_string()
             } else {
                 format!(
