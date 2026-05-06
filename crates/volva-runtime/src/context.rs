@@ -103,6 +103,10 @@ pub(crate) fn assemble_prompt_with_memory_and_recall(
             request.session.workspace.workspace_root
         ),
         format!(
+            "workspace_id: {}",
+            request.session.workspace.workspace_id
+        ),
+        format!(
             "worktree_id: {}",
             request
                 .session
@@ -453,21 +457,19 @@ mod tests {
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
 
-        assert_eq!(
-            prepared.final_prompt(),
-            "[volva-host-context]\n\
-source: host-provided context from volva\n\
-session_id: volva-run-test\n\
-workspace_root: /tmp/project\n\
-worktree_id: none\n\
-backend: official-cli\n\
-mode: run\n\
-participant: operator@volva\n\
-session_state: active\n\
-model: claude-sonnet-4-6\n\n\
-[user-prompt]\n\
-summarize the repository"
-        );
+        let output = prepared.final_prompt();
+        assert!(output.starts_with("[volva-host-context]\n"));
+        assert!(output.contains("source: host-provided context from volva"));
+        assert!(output.contains("session_id: volva-run-test"));
+        assert!(output.contains("workspace_root: /tmp/project"));
+        assert!(output.contains("workspace_id:"));
+        assert!(output.contains("worktree_id: none"));
+        assert!(output.contains("backend: official-cli"));
+        assert!(output.contains("mode: run"));
+        assert!(output.contains("participant: operator@volva"));
+        assert!(output.contains("session_state: active"));
+        assert!(output.contains("model: claude-sonnet-4-6"));
+        assert!(output.contains("[user-prompt]\nsummarize the repository"));
     }
 
     #[test]

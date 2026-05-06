@@ -78,6 +78,7 @@ pub fn session_status_lines(session: &ExecutionSessionIdentity) -> Vec<StatusLin
         StatusLine::new("session_id", session.session_id.as_str()),
         StatusLine::new("mode", session.mode.to_string()),
         StatusLine::new("workspace_root", session.workspace.workspace_root.clone()),
+        StatusLine::new("workspace_id", session.workspace.workspace_id.clone()),
         StatusLine::new(
             "worktree_id",
             session.workspace.worktree_id.as_deref().unwrap_or("none"),

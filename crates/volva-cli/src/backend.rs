@@ -154,6 +154,22 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
         "api_auth_status: not_applicable".to_string()
     };
 
+    // Check for active workspace session
+    let active_session_line = match runtime.load_execution_session() {
+        Ok(Some(session)) => {
+            use volva_core::ExecutionSessionState;
+            if matches!(session.session.state, ExecutionSessionState::Finished) {
+                "active_workspace_session: none".to_string()
+            } else {
+                format!(
+                    "active_workspace_session: {} (workspace: {})",
+                    session.session.session_id, session.session.workspace.workspace_id
+                )
+            }
+        }
+        _ => "active_workspace_session: none".to_string(),
+    };
+
     let mut lines = vec![
         format!("local_backend_ready: {local_backend_ready}"),
         format!("backend_ready: {backend_ready}"),
@@ -162,6 +178,7 @@ pub(crate) fn render_backend_doctor(runtime: &RuntimeBootstrap, cwd: &Path) -> V
         format!("backend_command: {}", backend_status.command),
         format!("backend_command_resolved: {backend_command_resolved}"),
         api_auth_status_line,
+        active_session_line,
         format!("hook_adapter: {hook_adapter_state}"),
         format!("hook_adapter_command_line: {hook_adapter_command}"),
         format!("hook_adapter_command_resolved: {hook_adapter_command_resolved}"),
@@ -875,6 +892,47 @@ mod tests {
         fs::set_permissions(&path, permissions).expect("temp file permissions should update");
 
         assert!(!command_resolved(path.to_string_lossy().as_ref()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn backend_doctor_reports_active_workspace_session() {
+        let vendor_dir = unique_temp_path("backend-doctor-session");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+
+        let runtime = RuntimeBootstrap::new(config);
+
+        // First, verify there's no active session initially
+        let lines = render_backend_doctor(&runtime, Path::new("/tmp"));
+        assert!(lines.contains(&"active_workspace_session: none".to_string()));
+
+        // Create a session and persist it
+        let session = volva_core::ExecutionSessionIdentity::new(
+            volva_core::ExecutionMode::Run,
+            volva_core::BackendKind::OfficialCli,
+            volva_core::WorkspaceBinding::from_root("/tmp/project"),
+            volva_core::ExecutionParticipantIdentity {
+                participant_id: "operator@volva".to_string(),
+                host_kind: "volva".to_string(),
+            },
+            volva_core::ExecutionSessionState::Active,
+        );
+
+        runtime
+            .persist_execution_session(session.clone())
+            .expect("session should persist");
+
+        // Now backend doctor should report the active session
+        let lines = render_backend_doctor(&runtime, Path::new("/tmp"));
+        assert!(lines.iter().any(|line| {
+            line.contains("active_workspace_session:")
+                && line.contains(&session.session_id.to_string())
+                && line.contains("workspace:")
+        }));
+
+        let _ = std::fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(unix)]

@@ -104,6 +104,8 @@ pub struct VolvaConfig {
     pub vendor_dir: PathBuf,
     #[serde(default)]
     pub durability_mode: CheckpointDurability,
+    #[serde(default)]
+    pub allow_concurrent_workspace_sessions: bool,
 }
 
 impl Default for VolvaConfig {
@@ -116,6 +118,7 @@ impl Default for VolvaConfig {
             hook_adapter: HookAdapterConfig::default(),
             vendor_dir: default_vendor_dir(),
             durability_mode: CheckpointDurability::default(),
+            allow_concurrent_workspace_sessions: false,
         }
     }
 }

@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use spore::logging::{SpanContext, workflow_span};
 use volva_bridge::{BridgeConfig, bridge_status};
 use volva_config::VolvaConfig;
-use volva_core::{BackendKind, ExecutionSessionIdentity, RuntimeStatus, StatusLine};
+use volva_core::{BackendKind, ExecutionSessionIdentity, ExecutionSessionState, RuntimeStatus, StatusLine};
 
 pub use hooks::{
     HookAdapter, HookAdapterState, HookContext, HookEvent, HookPhase, HookShell,
@@ -148,8 +148,17 @@ impl RuntimeBootstrap {
                 path.display()
             )
         })?;
-        let surface = serde_json::from_slice(&payload)
+        let mut surface = serde_json::from_slice::<BackendSessionSurface>(&payload)
             .context("failed to deserialize persisted execution session")?;
+
+        // Backfill workspace_id from workspace_root if empty (backwards compatibility)
+        if surface.session.workspace.workspace_id.is_empty() {
+            surface.session.workspace.workspace_id = std::fs::canonicalize(&surface.session.workspace.workspace_root)
+                .ok()
+                .and_then(|p| p.to_str().map(ToString::to_string))
+                .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
+        }
+
         Ok(Some(surface))
     }
 
@@ -169,6 +178,29 @@ impl RuntimeBootstrap {
         let _workflow_span =
             workflow_span("run_backend", &span_context_for_request(request)).entered();
         backend::validate_request(request)?;
+
+        // Check for existing active session in the same workspace
+        if !self.config.allow_concurrent_workspace_sessions
+            && let Some(existing_session) = self.load_execution_session()? {
+            let existing_state = existing_session.session.state;
+            let existing_workspace_id = &existing_session.session.workspace.workspace_id;
+            let incoming_workspace_id = &request.session.workspace.workspace_id;
+
+            // Consider Active, Paused, or Resumed states as "active"
+            let is_active = matches!(
+                existing_state,
+                ExecutionSessionState::Active | ExecutionSessionState::Paused | ExecutionSessionState::Resumed
+            );
+
+            if existing_workspace_id == incoming_workspace_id && is_active {
+                return Err(anyhow::anyhow!(
+                    "workspace {} already has an active session ({}); end it before starting a new one",
+                    existing_workspace_id,
+                    existing_session.session.session_id
+                ));
+            }
+        }
+
         self.persist_execution_session(request.session.clone())?;
         let prepared_prompt =
             context::assemble_prompt(&self.config, request, &request.capabilities);
@@ -334,6 +366,7 @@ mod tests {
     fn run_backend_emits_success_hooks_in_order() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
@@ -368,6 +401,7 @@ mod tests {
     fn run_backend_passes_assembled_prompt_to_backend_command() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
@@ -389,6 +423,7 @@ mod tests {
     fn run_backend_emits_assembled_prompt_in_hook_context() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         runtime
@@ -425,6 +460,7 @@ mod tests {
     fn run_backend_forwards_hooks_to_adapter_in_order() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let adapter = ForwardingHookAdapter::default();
         let events = adapter.events.clone();
@@ -461,6 +497,7 @@ mod tests {
     fn run_backend_emits_failure_hooks_in_order() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/definitely/not/a/real/claude".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let error = runtime
@@ -492,6 +529,7 @@ mod tests {
     fn run_backend_emits_failure_hooks_for_nonzero_exit() {
         let mut config = VolvaConfig::default();
         config.backend.command = "/usr/bin/false".to_string();
+        config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
         let result = runtime
@@ -523,8 +561,10 @@ mod tests {
 
     #[test]
     fn native_api_backend_is_now_supported() {
+        let mut config = VolvaConfig::default();
+        config.allow_concurrent_workspace_sessions = true;
         let runtime =
-            RuntimeBootstrap::with_hook_shell(VolvaConfig::default(), HookShell::recording());
+            RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
 
         // AnthropicApi backend should be accepted by validate_request, even though
         // it may fail later due to missing API key. The important thing is that it
@@ -547,6 +587,90 @@ mod tests {
             }
             Ok(_) => panic!("without a real API key, this should fail"),
         }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn run_backend_rejects_second_session_in_same_workspace_by_default() {
+        let vendor_dir = unique_vendor_dir("cardinality-guard");
+        let workspace_dir = unique_vendor_dir("cardinality-workspace");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+        config.allow_concurrent_workspace_sessions = false;
+
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        let workspace_path = workspace_dir.to_string_lossy().to_string();
+
+        // Create the workspace directory
+        fs::create_dir_all(&workspace_dir).ok();
+
+        let mut request = test_request("first prompt", &workspace_path, BackendKind::OfficialCli);
+
+        // First session should succeed
+        let first_result = runtime.run_backend(&request);
+        assert!(first_result.is_ok(), "first session should succeed");
+
+        // Manually set the persisted session to Active state to simulate an ongoing session
+        // (in production, a long-running session would still be Active)
+        let mut persisted = runtime.load_execution_session()
+            .expect("session should load")
+            .expect("session should exist");
+        persisted.session.state = ExecutionSessionState::Active;
+        runtime.persist_execution_session(persisted.session.clone())
+            .expect("should re-persist with Active state");
+
+        // Second session in same workspace should fail
+        let second_request = test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
+        let second_result = runtime.run_backend(&second_request);
+        assert!(
+            second_result.is_err(),
+            "second session in same workspace should fail"
+        );
+        assert!(
+            second_result
+                .unwrap_err()
+                .to_string()
+                .contains("already has an active session"),
+            "error message should mention active session"
+        );
+
+        let _ = fs::remove_dir_all(vendor_dir);
+        let _ = fs::remove_dir_all(workspace_dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn run_backend_allows_second_session_when_config_permits() {
+        let vendor_dir = unique_vendor_dir("cardinality-guard-override");
+        let workspace_dir = unique_vendor_dir("cardinality-workspace-override");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+        config.allow_concurrent_workspace_sessions = true;
+
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        let workspace_path = workspace_dir.to_string_lossy().to_string();
+
+        // Create the workspace directory
+        fs::create_dir_all(&workspace_dir).ok();
+
+        let request = test_request("first prompt", &workspace_path, BackendKind::OfficialCli);
+
+        // First session should succeed
+        let first_result = runtime.run_backend(&request);
+        assert!(first_result.is_ok(), "first session should succeed");
+
+        // Second session should succeed when config permits
+        let second_request = test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
+        let second_result = runtime.run_backend(&second_request);
+        assert!(
+            second_result.is_ok(),
+            "second session should succeed when allowed by config"
+        );
+
+        let _ = fs::remove_dir_all(vendor_dir);
+        let _ = fs::remove_dir_all(workspace_dir);
     }
 
     #[cfg(not(windows))]

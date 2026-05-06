@@ -193,14 +193,28 @@ impl fmt::Display for ExecutionSessionId {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceBinding {
     pub workspace_root: String,
+    #[serde(default = "default_workspace_id")]
+    pub workspace_id: String,
     pub worktree_id: Option<String>,
+}
+
+fn default_workspace_id() -> String {
+    String::new()
 }
 
 impl WorkspaceBinding {
     #[must_use]
     pub fn from_root(root: impl AsRef<Path>) -> Self {
+        let path = root.as_ref();
+        let workspace_root = path.display().to_string();
+        let workspace_id = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|p| p.to_str().map(ToString::to_string))
+            .unwrap_or_else(|| workspace_root.clone());
+
         Self {
-            workspace_root: root.as_ref().display().to_string(),
+            workspace_root,
+            workspace_id,
             worktree_id: None,
         }
     }
@@ -322,6 +336,7 @@ mod tests {
 
         assert!(session.session_id.0.starts_with("volva-run-"));
         assert_eq!(session.workspace.workspace_root, "/tmp/project");
+        assert!(!session.workspace.workspace_id.is_empty());
         assert_eq!(session.workspace.worktree_id.as_deref(), Some("wt-1"));
         assert_eq!(session.primary_participant.participant_id, "operator@volva");
         assert_eq!(session.state, ExecutionSessionState::Active);
