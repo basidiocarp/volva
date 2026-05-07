@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.5"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -15,7 +15,7 @@ dirs = "6"
 opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-spore = { git = "https://github.com/basidiocarp/spore", rev = "0bc2e878010e75e30e26fa517d747e97d59628b0", features = ["otel"] }
+spore = { git = "https://github.com/basidiocarp/spore", tag = "v0.5.0", features = ["otel"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter", "fmt"] }
