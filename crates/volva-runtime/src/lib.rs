@@ -567,8 +567,10 @@ mod tests {
 
     #[test]
     fn native_api_backend_is_now_supported() {
-        let mut config = VolvaConfig::default();
-        config.allow_concurrent_workspace_sessions = true;
+        let config = VolvaConfig {
+            allow_concurrent_workspace_sessions: true,
+            ..VolvaConfig::default()
+        };
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
 
         // AnthropicApi backend should be accepted by validate_request, even though
@@ -610,7 +612,7 @@ mod tests {
         // Create the workspace directory
         fs::create_dir_all(&workspace_dir).ok();
 
-        let mut request = test_request("first prompt", &workspace_path, BackendKind::OfficialCli);
+        let request = test_request("first prompt", &workspace_path, BackendKind::OfficialCli);
 
         // First session should succeed
         let first_result = runtime.run_backend(&request);
