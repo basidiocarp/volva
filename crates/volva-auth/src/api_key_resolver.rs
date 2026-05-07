@@ -25,13 +25,14 @@ impl ApiKeyResolver {
     pub fn resolve() -> Result<ResolvedCredential, AuthError> {
         // Step 1: Check environment variable
         if let Ok(api_key) = std::env::var(ENV_API_KEY)
-            && !api_key.is_empty() {
-                return Ok(ResolvedCredential {
-                    mode: AuthMode::ApiKey,
-                    secret: api_key,
-                    source: ENV_API_KEY.to_string(),
-                });
-            }
+            && !api_key.is_empty()
+        {
+            return Ok(ResolvedCredential {
+                mode: AuthMode::ApiKey,
+                secret: api_key,
+                source: ENV_API_KEY.to_string(),
+            });
+        }
 
         // Step 2: Check config file
         if let Ok(api_key) = Self::load_from_config() {
@@ -52,7 +53,7 @@ impl ApiKeyResolver {
                 });
             }
             Err(AuthError::NotFound) => {} // Continue to error
-            Err(e) => return Err(e),        // Surface keychain errors
+            Err(e) => return Err(e),       // Surface keychain errors
         }
 
         Err(AuthError::NotFound)
@@ -74,8 +75,7 @@ impl ApiKeyResolver {
             anyhow::bail!("config file not found");
         }
 
-        let content = fs::read_to_string(&config_path)
-            .context("failed to read config file")?;
+        let content = fs::read_to_string(&config_path).context("failed to read config file")?;
 
         // Simple line-by-line parser for api_key = "..." pattern
         for line in content.lines() {
@@ -88,10 +88,12 @@ impl ApiKeyResolver {
                         if !quoted.is_empty() {
                             return Ok(quoted.to_string());
                         }
-                    } else if let Some(quoted) = rest.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))
-                        && !quoted.is_empty() {
-                            return Ok(quoted.to_string());
-                        }
+                    } else if let Some(quoted) =
+                        rest.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))
+                        && !quoted.is_empty()
+                    {
+                        return Ok(quoted.to_string());
+                    }
                 }
             }
         }
@@ -113,9 +115,7 @@ impl ApiKeyResolver {
     }
 
     fn config_file_path() -> Result<PathBuf> {
-        let home = dirs::home_dir()
-            .context("could not determine home directory")?;
+        let home = dirs::home_dir().context("could not determine home directory")?;
         Ok(home.join(".config").join("volva").join("config.toml"))
     }
 }
-

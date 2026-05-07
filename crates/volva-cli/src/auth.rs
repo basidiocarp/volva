@@ -118,7 +118,9 @@ fn handle_setup(_command: SetupCommand, span_context: &SpanContext) -> Result<()
 
     println!();
     println!("Successfully stored API key in OS keychain.");
-    println!("Your API key is now available for: volva chat, volva run --backend api, and other operations.");
+    println!(
+        "Your API key is now available for: volva chat, volva run --backend api, and other operations."
+    );
 
     Ok(())
 }

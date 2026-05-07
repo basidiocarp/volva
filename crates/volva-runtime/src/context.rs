@@ -102,10 +102,7 @@ pub(crate) fn assemble_prompt_with_memory_and_recall(
             "workspace_root: {}",
             request.session.workspace.workspace_root
         ),
-        format!(
-            "workspace_id: {}",
-            request.session.workspace.workspace_id
-        ),
+        format!("workspace_id: {}", request.session.workspace.workspace_id),
         format!(
             "worktree_id: {}",
             request

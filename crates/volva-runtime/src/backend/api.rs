@@ -31,8 +31,7 @@ pub fn run(
     };
 
     // Create a Tokio runtime to run the async API call
-    let runtime = Runtime::new()
-        .context("failed to create Tokio runtime for API backend")?;
+    let runtime = Runtime::new().context("failed to create Tokio runtime for API backend")?;
 
     // Build the chat request
     let chat_request = ChatRequest::new(

@@ -67,7 +67,10 @@ pub fn session_surface_for(
     BackendSessionSurface {
         backend: session.backend,
         backend_command: config.backend.command.clone(),
-        run_supported: matches!(config.backend.kind, BackendKind::OfficialCli | BackendKind::AnthropicApi),
+        run_supported: matches!(
+            config.backend.kind,
+            BackendKind::OfficialCli | BackendKind::AnthropicApi
+        ),
         session,
     }
 }

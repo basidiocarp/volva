@@ -12,7 +12,9 @@ use anyhow::{Context, Result};
 use spore::logging::{SpanContext, workflow_span};
 use volva_bridge::{BridgeConfig, bridge_status};
 use volva_config::VolvaConfig;
-use volva_core::{BackendKind, ExecutionSessionIdentity, ExecutionSessionState, RuntimeStatus, StatusLine};
+use volva_core::{
+    BackendKind, ExecutionSessionIdentity, ExecutionSessionState, RuntimeStatus, StatusLine,
+};
 
 pub use hooks::{
     HookAdapter, HookAdapterState, HookContext, HookEvent, HookPhase, HookShell,
@@ -153,10 +155,11 @@ impl RuntimeBootstrap {
 
         // Backfill workspace_id from workspace_root if empty (backwards compatibility)
         if surface.session.workspace.workspace_id.is_empty() {
-            surface.session.workspace.workspace_id = std::fs::canonicalize(&surface.session.workspace.workspace_root)
-                .ok()
-                .and_then(|p| p.to_str().map(ToString::to_string))
-                .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
+            surface.session.workspace.workspace_id =
+                std::fs::canonicalize(&surface.session.workspace.workspace_root)
+                    .ok()
+                    .and_then(|p| p.to_str().map(ToString::to_string))
+                    .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
         }
 
         Ok(Some(surface))
@@ -181,7 +184,8 @@ impl RuntimeBootstrap {
 
         // Check for existing active session in the same workspace
         if !self.config.allow_concurrent_workspace_sessions
-            && let Some(existing_session) = self.load_execution_session()? {
+            && let Some(existing_session) = self.load_execution_session()?
+        {
             let existing_state = existing_session.session.state;
             let existing_workspace_id = &existing_session.session.workspace.workspace_id;
             let incoming_workspace_id = &request.session.workspace.workspace_id;
@@ -189,7 +193,9 @@ impl RuntimeBootstrap {
             // Consider Active, Paused, or Resumed states as "active"
             let is_active = matches!(
                 existing_state,
-                ExecutionSessionState::Active | ExecutionSessionState::Paused | ExecutionSessionState::Resumed
+                ExecutionSessionState::Active
+                    | ExecutionSessionState::Paused
+                    | ExecutionSessionState::Resumed
             );
 
             if existing_workspace_id == incoming_workspace_id && is_active {
@@ -563,8 +569,7 @@ mod tests {
     fn native_api_backend_is_now_supported() {
         let mut config = VolvaConfig::default();
         config.allow_concurrent_workspace_sessions = true;
-        let runtime =
-            RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
 
         // AnthropicApi backend should be accepted by validate_request, even though
         // it may fail later due to missing API key. The important thing is that it
@@ -613,15 +618,18 @@ mod tests {
 
         // Manually set the persisted session to Active state to simulate an ongoing session
         // (in production, a long-running session would still be Active)
-        let mut persisted = runtime.load_execution_session()
+        let mut persisted = runtime
+            .load_execution_session()
             .expect("session should load")
             .expect("session should exist");
         persisted.session.state = ExecutionSessionState::Active;
-        runtime.persist_execution_session(persisted.session.clone())
+        runtime
+            .persist_execution_session(persisted.session.clone())
             .expect("should re-persist with Active state");
 
         // Second session in same workspace should fail
-        let second_request = test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
+        let second_request =
+            test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
         let second_result = runtime.run_backend(&second_request);
         assert!(
             second_result.is_err(),
@@ -662,7 +670,8 @@ mod tests {
         assert!(first_result.is_ok(), "first session should succeed");
 
         // Second session should succeed when config permits
-        let second_request = test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
+        let second_request =
+            test_request("second prompt", &workspace_path, BackendKind::OfficialCli);
         let second_result = runtime.run_backend(&second_request);
         assert!(
             second_result.is_ok(),
