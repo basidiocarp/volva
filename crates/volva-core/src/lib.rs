@@ -317,9 +317,164 @@ impl ExecutionSessionIdentity {
 #[cfg(test)]
 mod tests {
     use super::{
-        BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionId,
-        ExecutionSessionIdentity, ExecutionSessionState, WorkspaceBinding,
+        AuthCredentialSource, AuthMode, AuthProvider, AuthTarget, BackendKind, ExecutionMode,
+        ExecutionParticipantIdentity, ExecutionSessionId, ExecutionSessionIdentity,
+        ExecutionSessionState, OperationMode, StatusLine, WorkspaceBinding,
     };
+
+    // --- Display impls ---
+
+    #[test]
+    fn operation_mode_display() {
+        assert_eq!(OperationMode::Baseline.to_string(), "baseline");
+        assert_eq!(OperationMode::Orchestration.to_string(), "orchestration");
+    }
+
+    #[test]
+    fn backend_kind_display() {
+        assert_eq!(BackendKind::OfficialCli.to_string(), "official-cli");
+        assert_eq!(BackendKind::AnthropicApi.to_string(), "anthropic-api");
+    }
+
+    #[test]
+    fn auth_provider_display() {
+        assert_eq!(AuthProvider::Anthropic.to_string(), "anthropic");
+    }
+
+    #[test]
+    fn auth_target_display() {
+        assert_eq!(AuthTarget::ClaudeAi.to_string(), "claude.ai");
+        assert_eq!(AuthTarget::Console.to_string(), "console");
+    }
+
+    #[test]
+    fn auth_mode_display() {
+        assert_eq!(AuthMode::ApiKey.to_string(), "api-key");
+        assert_eq!(AuthMode::BearerToken.to_string(), "bearer-token");
+    }
+
+    #[test]
+    fn auth_credential_source_display() {
+        assert_eq!(
+            AuthCredentialSource::EnvironmentApiKey.to_string(),
+            "environment-api-key"
+        );
+        assert_eq!(
+            AuthCredentialSource::StoredCredential.to_string(),
+            "saved-credential"
+        );
+    }
+
+    #[test]
+    fn execution_mode_display() {
+        assert_eq!(ExecutionMode::Run.to_string(), "run");
+        assert_eq!(ExecutionMode::Chat.to_string(), "chat");
+        assert_eq!(ExecutionMode::BackendStatus.to_string(), "backend-status");
+    }
+
+    #[test]
+    fn execution_session_state_display() {
+        assert_eq!(ExecutionSessionState::Planned.to_string(), "planned");
+        assert_eq!(ExecutionSessionState::Active.to_string(), "active");
+        assert_eq!(ExecutionSessionState::Paused.to_string(), "paused");
+        assert_eq!(ExecutionSessionState::Resumed.to_string(), "resumed");
+        assert_eq!(ExecutionSessionState::Finished.to_string(), "finished");
+    }
+
+    #[test]
+    fn execution_participant_identity_display_is_participant_id() {
+        let identity = ExecutionParticipantIdentity {
+            participant_id: "agent-42".to_string(),
+            host_kind: "volva".to_string(),
+        };
+        assert_eq!(identity.to_string(), "agent-42");
+    }
+
+    // --- Default derivations ---
+
+    #[test]
+    fn operation_mode_defaults_to_baseline() {
+        assert_eq!(OperationMode::default(), OperationMode::Baseline);
+    }
+
+    // --- Serde ---
+
+    #[test]
+    fn backend_kind_serializes_as_kebab_case() {
+        assert_eq!(
+            serde_json::to_string(&BackendKind::OfficialCli).unwrap(),
+            "\"official-cli\""
+        );
+        assert_eq!(
+            serde_json::to_string(&BackendKind::AnthropicApi).unwrap(),
+            "\"anthropic-api\""
+        );
+    }
+
+    #[test]
+    fn backend_kind_roundtrips_via_serde() {
+        let original = BackendKind::OfficialCli;
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: BackendKind = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    // --- StatusLine ---
+
+    #[test]
+    fn status_line_new_sets_label_and_value() {
+        let line = StatusLine::new("Backend", "official-cli");
+        assert_eq!(line.label, "Backend");
+        assert_eq!(line.value, "official-cli");
+    }
+
+    #[test]
+    fn status_line_new_accepts_owned_strings() {
+        let label = "Auth".to_string();
+        let value = "api-key".to_string();
+        let line = StatusLine::new(label, value);
+        assert_eq!(line.label, "Auth");
+        assert_eq!(line.value, "api-key");
+    }
+
+    // --- WorkspaceBinding ---
+
+    #[test]
+    fn workspace_binding_from_root_sets_workspace_root() {
+        let binding = WorkspaceBinding::from_root("/tmp/myproject");
+        assert_eq!(binding.workspace_root, "/tmp/myproject");
+        assert!(!binding.workspace_id.is_empty());
+        assert!(binding.worktree_id.is_none());
+    }
+
+    #[test]
+    fn workspace_binding_with_worktree_id_some() {
+        let binding =
+            WorkspaceBinding::from_root("/tmp/p").with_worktree_id(Some("wt-1".to_string()));
+        assert_eq!(binding.worktree_id.as_deref(), Some("wt-1"));
+    }
+
+    #[test]
+    fn workspace_binding_with_worktree_id_none() {
+        let binding = WorkspaceBinding::from_root("/tmp/p").with_worktree_id(None);
+        assert!(binding.worktree_id.is_none());
+    }
+
+    #[test]
+    fn workspace_binding_with_worktree_id_empty_string_filtered() {
+        let binding =
+            WorkspaceBinding::from_root("/tmp/p").with_worktree_id(Some(String::new()));
+        assert!(binding.worktree_id.is_none());
+    }
+
+    #[test]
+    fn workspace_binding_with_worktree_id_whitespace_only_filtered() {
+        let binding =
+            WorkspaceBinding::from_root("/tmp/p").with_worktree_id(Some("   ".to_string()));
+        assert!(binding.worktree_id.is_none());
+    }
+
+    // --- ExecutionSessionIdentity (existing, kept) ---
 
     #[test]
     fn execution_session_identity_captures_workspace_and_state() {
@@ -343,6 +498,24 @@ mod tests {
     }
 
     #[test]
+    fn execution_session_identity_with_state_transitions() {
+        let session = ExecutionSessionIdentity::new(
+            ExecutionMode::Chat,
+            BackendKind::AnthropicApi,
+            WorkspaceBinding::from_root("/tmp/p"),
+            ExecutionParticipantIdentity {
+                participant_id: "agent".to_string(),
+                host_kind: "volva".to_string(),
+            },
+            ExecutionSessionState::Planned,
+        )
+        .with_state(ExecutionSessionState::Finished);
+
+        assert_eq!(session.state, ExecutionSessionState::Finished);
+        assert!(session.session_id.0.starts_with("volva-chat-"));
+    }
+
+    #[test]
     fn execution_session_id_generation_is_not_timestamp_shaped() {
         let first = ExecutionSessionId::generate(ExecutionMode::Run);
         let second = ExecutionSessionId::generate(ExecutionMode::Run);
@@ -352,5 +525,11 @@ mod tests {
         assert!(first.0.starts_with("volva-run-"));
         assert!(first.0.len() > "volva-run-0000000000000".len());
         assert!(!suffix.chars().all(|ch: char| ch.is_ascii_digit()));
+    }
+
+    #[test]
+    fn execution_session_id_as_str_matches_inner() {
+        let id = ExecutionSessionId::generate(ExecutionMode::Run);
+        assert_eq!(id.as_str(), id.0.as_str());
     }
 }
