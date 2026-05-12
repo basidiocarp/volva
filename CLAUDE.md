@@ -26,6 +26,17 @@ Thin support or stub crates:
 
 Keep that distinction explicit when updating docs or planning work. The support crates are intentionally small and mostly placeholder-like today.
 
+## Deferred Crates
+
+The four support crates (`volva-adapters`, `volva-bridge`, `volva-compat`, `volva-tools`) are currently stubs with hardcoded data, but they are integrated into the runtime and CLI:
+
+- **`volva-adapters`**: returns a hardcoded list of available hook adapters. Pending real discovery from filesystem or manifest.
+- **`volva-bridge`**: provides basic bridge configuration (enabled/disabled, server URL). Pending schema support and profile loading.
+- **`volva-compat`**: returns legacy `~/.claude/` config paths for backwards compatibility. Pending consolidated settings model and migration flow.
+- **`volva-tools`**: returns a hardcoded list of seven builtin tool specs. Pending dynamic tool loading and policy-based filtering.
+
+Do not fold these into `volva-core`. Their public APIs are used by `volva-runtime` and `volva-cli`, and keeping them as separate crates allows implementation to scale later without restructuring the core.
+
 ---
 
 ## Operating Model

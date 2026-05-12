@@ -1,3 +1,8 @@
+//! Placeholder backwards-compatibility layer for Claude configuration.
+//!
+//! This crate provides discovery of legacy Claude configuration files.
+//! Real implementation pending: migration flow and consolidated settings model.
+
 use std::path::PathBuf;
 
 #[must_use]

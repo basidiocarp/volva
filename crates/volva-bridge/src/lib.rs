@@ -1,3 +1,8 @@
+//! Placeholder bridge configuration.
+//!
+//! This crate provides basic bridge configuration (enabled/disabled state and server URL).
+//! Real implementation pending: schema support, profile loading, and backend discovery.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeConfig {
     pub enabled: bool,

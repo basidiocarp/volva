@@ -1,3 +1,8 @@
+//! Placeholder adapter registry.
+//!
+//! This crate provides a hardcoded list of available hook adapters.
+//! Real implementation pending: discovery from the filesystem or a manifest.
+
 #[must_use]
 pub fn adapter_names() -> Vec<&'static str> {
     vec!["hyphae", "rhizome", "cortina", "canopy", "stipe"]
