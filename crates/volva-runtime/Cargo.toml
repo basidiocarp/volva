@@ -15,7 +15,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tracing.workspace = true
 tempfile = "3"
 thiserror = "2"
-twox-hash = "1"
+twox-hash = "2"
 volva-adapters = { path = "../volva-adapters" }
 volva-api = { path = "../volva-api" }
 volva-auth = { path = "../volva-auth" }
