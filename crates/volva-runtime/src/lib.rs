@@ -113,6 +113,10 @@ impl RuntimeBootstrap {
             .join("execution-session.json")
     }
 
+    fn session_lock_path(&self) -> PathBuf {
+        self.config.vendor_dir.join("volva").join("session.lock")
+    }
+
     pub fn persist_execution_session(
         &self,
         session: ExecutionSessionIdentity,
@@ -165,6 +169,35 @@ impl RuntimeBootstrap {
         Ok(Some(surface))
     }
 
+    fn acquire_session_lock(&self) -> Result<std::fs::File> {
+        let lock_path = self.session_lock_path();
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create session lock directory `{}`",
+                    parent.display()
+                )
+            })?;
+        }
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    anyhow::anyhow!("another volva session is already active in this workspace")
+                } else {
+                    anyhow::Error::from(e)
+                }
+            })
+            .with_context(|| {
+                format!(
+                    "failed to acquire session lock at `{}`",
+                    lock_path.display()
+                )
+            })
+    }
+
     #[cfg(test)]
     #[must_use]
     pub(crate) fn hook_events(&self) -> Vec<HookEvent> {
@@ -181,6 +214,18 @@ impl RuntimeBootstrap {
         let _workflow_span =
             workflow_span("run_backend", &span_context_for_request(request)).entered();
         backend::validate_request(request)?;
+
+        // Acquire exclusive session lock only when concurrent sessions are not allowed.
+        // O_EXCL creation prevents two processes from both observing "no active session"
+        // and both proceeding to write — the TOCTOU guard.
+        let lock_guard = if self.config.allow_concurrent_workspace_sessions {
+            None
+        } else {
+            Some(
+                self.acquire_session_lock()
+                    .context("failed to acquire exclusive session lock")?,
+            )
+        };
 
         // Check for existing active session in the same workspace
         if !self.config.allow_concurrent_workspace_sessions
@@ -229,6 +274,9 @@ impl RuntimeBootstrap {
                 self.flush_hook_diagnostics();
                 self.hooks.emit(HookPhase::SessionEnd, failure_context);
                 self.flush_hook_diagnostics();
+                if lock_guard.is_some() {
+                    let _ = fs::remove_file(self.session_lock_path());
+                }
                 return Err(error);
             }
         };
@@ -247,6 +295,9 @@ impl RuntimeBootstrap {
         self.hooks.emit(HookPhase::SessionEnd, completed_context);
         self.flush_hook_diagnostics();
 
+        if lock_guard.is_some() {
+            let _ = fs::remove_file(self.session_lock_path());
+        }
         Ok(result)
     }
 }
@@ -370,8 +421,10 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_success_hooks_in_order() {
+        let vendor_dir = unique_vendor_dir("success-hooks");
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
@@ -400,13 +453,17 @@ mod tests {
                 HookPhase::SessionEnd,
             ]
         );
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(not(windows))]
     #[test]
     fn run_backend_passes_assembled_prompt_to_backend_command() {
+        let vendor_dir = unique_vendor_dir("prompt-payload");
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
@@ -422,13 +479,17 @@ mod tests {
         assert!(result.stdout.contains("\nbackend: official-cli"));
         assert!(result.stdout.contains("\n[user-prompt]\nshow status"));
         assert_ne!(result.stdout, "-p show status");
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_assembled_prompt_in_hook_context() {
+        let vendor_dir = unique_vendor_dir("hook-context");
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
@@ -459,13 +520,17 @@ mod tests {
                 .contains("\n[user-prompt]\nshow status")
         );
         assert_ne!(before_prompt.context.prompt_text, "show status");
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(not(windows))]
     #[test]
     fn run_backend_forwards_hooks_to_adapter_in_order() {
+        let vendor_dir = unique_vendor_dir("adapter-order");
         let mut config = VolvaConfig::default();
         config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let adapter = ForwardingHookAdapter::default();
@@ -497,12 +562,16 @@ mod tests {
                 HookPhase::SessionEnd,
             ]
         );
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[test]
     fn run_backend_emits_failure_hooks_in_order() {
+        let vendor_dir = unique_vendor_dir("failure-hooks");
         let mut config = VolvaConfig::default();
         config.backend.command = "/definitely/not/a/real/claude".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
@@ -528,13 +597,17 @@ mod tests {
         );
 
         assert_eq!(events[2].context.error, Some(error.to_string()));
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_failure_hooks_for_nonzero_exit() {
+        let vendor_dir = unique_vendor_dir("nonzero-exit");
         let mut config = VolvaConfig::default();
         config.backend.command = "/usr/bin/false".to_string();
+        config.vendor_dir = vendor_dir.clone();
         config.allow_concurrent_workspace_sessions = true;
 
         let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
@@ -563,11 +636,15 @@ mod tests {
                 HookPhase::SessionEnd,
             ]
         );
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[test]
     fn native_api_backend_is_now_supported() {
+        let vendor_dir = unique_vendor_dir("api-backend");
         let config = VolvaConfig {
+            vendor_dir: vendor_dir.clone(),
             allow_concurrent_workspace_sessions: true,
             ..VolvaConfig::default()
         };
@@ -594,6 +671,8 @@ mod tests {
             }
             Ok(_) => panic!("without a real API key, this should fail"),
         }
+
+        let _ = fs::remove_dir_all(vendor_dir);
     }
 
     #[cfg(not(windows))]
@@ -715,5 +794,86 @@ mod tests {
         assert_eq!(loaded.session.state, ExecutionSessionState::Finished);
 
         let _ = fs::remove_dir_all(vendor_dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn session_lock_prevents_double_start() {
+        let vendor_dir = unique_vendor_dir("session-lock");
+        let workspace_dir = unique_vendor_dir("session-lock-workspace");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+        config.allow_concurrent_workspace_sessions = false;
+
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        let workspace_path = workspace_dir.to_string_lossy().to_string();
+
+        // Create the workspace directory
+        fs::create_dir_all(&workspace_dir).ok();
+
+        let request = test_request("first prompt", &workspace_path, BackendKind::OfficialCli);
+
+        // Start one session (acquire lock)
+        let first_result = runtime.run_backend(&request);
+        assert!(first_result.is_ok(), "first session should succeed");
+
+        // Verify that the lock file no longer exists after the session completes
+        // (it should be cleaned up after session end)
+        let lock_path = runtime.session_lock_path();
+        assert!(
+            !lock_path.exists(),
+            "lock file should be cleaned up after session completes"
+        );
+
+        // End the first session (lock is already released)
+        // Third session start should succeed
+        let third_request = test_request("third prompt", &workspace_path, BackendKind::OfficialCli);
+        let third_result = runtime.run_backend(&third_request);
+        assert!(
+            third_result.is_ok(),
+            "third session should succeed after first completes"
+        );
+
+        let _ = fs::remove_dir_all(vendor_dir);
+        let _ = fs::remove_dir_all(workspace_dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn session_lock_rejects_while_lock_held() {
+        // Simulate a concurrent second invocation by pre-creating the lock file.
+        // O_EXCL guarantees that any process seeing the file cannot acquire the lock.
+        let vendor_dir = unique_vendor_dir("session-lock-reject");
+        let workspace_dir = unique_vendor_dir("session-lock-reject-workspace");
+        let mut config = VolvaConfig::default();
+        config.backend.command = "/bin/echo".to_string();
+        config.vendor_dir = vendor_dir.clone();
+        config.allow_concurrent_workspace_sessions = false;
+
+        let runtime = RuntimeBootstrap::with_hook_shell(config, HookShell::recording());
+        fs::create_dir_all(&workspace_dir).ok();
+
+        // Create the lock directory and pre-create the lock file (simulates another process)
+        let lock_path = runtime.session_lock_path();
+        fs::create_dir_all(lock_path.parent().unwrap()).ok();
+        fs::File::create(&lock_path).expect("test setup: failed to create pre-existing lock");
+
+        // This invocation should fail because the lock file already exists
+        let request = test_request(
+            "blocked prompt",
+            &workspace_dir.to_string_lossy(),
+            BackendKind::OfficialCli,
+        );
+        let result = runtime.run_backend(&request);
+        assert!(result.is_err(), "session should fail when lock file exists");
+        let error_msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            error_msg.contains("already active") || error_msg.contains("session lock"),
+            "error should mention session lock conflict, got: {error_msg}"
+        );
+
+        let _ = fs::remove_dir_all(vendor_dir);
+        let _ = fs::remove_dir_all(workspace_dir);
     }
 }
