@@ -462,8 +462,7 @@ mod tests {
 
     #[test]
     fn workspace_binding_with_worktree_id_empty_string_filtered() {
-        let binding =
-            WorkspaceBinding::from_root("/tmp/p").with_worktree_id(Some(String::new()));
+        let binding = WorkspaceBinding::from_root("/tmp/p").with_worktree_id(Some(String::new()));
         assert!(binding.worktree_id.is_none());
     }
 

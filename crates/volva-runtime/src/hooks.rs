@@ -259,7 +259,7 @@ impl<'a> From<&'a HookEvent> for HookAdapterPayload<'a> {
 }
 
 pub trait HookAdapter: Debug + Send + Sync {
-    fn handle(&self, event: HookEvent);
+    fn handle(&self, event: HookEvent, phase: HookPhase);
 }
 
 #[non_exhaustive]
@@ -294,7 +294,7 @@ impl HookAdapterState {
 struct NoopHookAdapter;
 
 impl HookAdapter for NoopHookAdapter {
-    fn handle(&self, _event: HookEvent) {}
+    fn handle(&self, _event: HookEvent, _phase: HookPhase) {}
 }
 
 #[derive(Debug, Clone)]
@@ -340,7 +340,7 @@ impl ExternalCommandHookAdapter {
             .push(message);
     }
 
-    fn invoke(&self, event: &HookEvent) -> Result<()> {
+    fn invoke(&self, event: &HookEvent, timeout: Duration) -> Result<()> {
         let span_context = SpanContext::for_app("volva")
             .with_tool("hook_adapter")
             .with_workspace_root(event.context.cwd.display().to_string());
@@ -404,7 +404,7 @@ impl ExternalCommandHookAdapter {
                 break status;
             }
 
-            if start.elapsed() >= self.timeout {
+            if start.elapsed() >= timeout {
                 let _ = child.kill();
                 let _ = child.wait();
                 let stdout = stdout_file
@@ -416,7 +416,7 @@ impl ExternalCommandHookAdapter {
                 anyhow::bail!(
                     "hook adapter `{}` timed out after {:?}; stdout=`{}` stderr=`{}`",
                     self.command.display(),
-                    self.timeout,
+                    timeout,
                     redact_diagnostic(&stdout),
                     redact_diagnostic(&stderr)
                 );
@@ -447,12 +447,33 @@ impl ExternalCommandHookAdapter {
 }
 
 impl HookAdapter for ExternalCommandHookAdapter {
-    fn handle(&self, event: HookEvent) {
-        if let Err(error) = self.invoke(&event) {
+    fn handle(&self, event: HookEvent, phase: HookPhase) {
+        let effective_timeout = match phase {
+            HookPhase::BeforePromptSend | HookPhase::SessionStart => Duration::from_millis(500),
+            _ => self.timeout,
+        };
+        if let Err(error) = self.invoke(&event, effective_timeout) {
+            let is_preflight =
+                matches!(phase, HookPhase::BeforePromptSend | HookPhase::SessionStart);
+            // Coupled to the "timed out after" message produced by anyhow::bail! in invoke().
+            // If that message changes, update this check. Tracked for typed-error refactor.
+            let is_timeout = error.to_string().contains("timed out");
+
+            if is_preflight && is_timeout {
+                // Tight-timeout kill on pre-flight phases is expected behavior; warn only,
+                // do not surface as an operator diagnostic.
+                tracing::warn!(
+                    "hook adapter `{}` skipped for phase {:?}: {error}",
+                    self.command.display(),
+                    phase
+                );
+                return;
+            }
+
             self.record_diagnostic(format!(
                 "hook adapter `{}` failed for phase {:?}: {error}",
                 self.command.display(),
-                event.phase
+                phase
             ));
         }
     }
@@ -579,7 +600,7 @@ impl RecordingHookAdapter {
 
 #[cfg(test)]
 impl HookAdapter for RecordingHookAdapter {
-    fn handle(&self, event: HookEvent) {
+    fn handle(&self, event: HookEvent, _phase: HookPhase) {
         self.events
             .lock()
             .expect("hook recorder mutex should not be poisoned")
@@ -674,7 +695,7 @@ impl HookShell {
     }
 
     pub fn emit(&self, phase: HookPhase, context: HookContext) {
-        self.adapter.handle(HookEvent { phase, context });
+        self.adapter.handle(HookEvent { phase, context }, phase);
     }
 
     #[must_use]
@@ -877,7 +898,7 @@ mod tests {
             trusted: false,
         });
         shell.emit(
-            HookPhase::BeforePromptSend,
+            HookPhase::ResponseComplete,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
                 execution_session: test_session(
@@ -899,7 +920,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("payload should be JSON: {error}"));
 
         assert_eq!(value["schema_version"], "1.0");
-        assert_eq!(value["phase"], "before_prompt_send");
+        assert_eq!(value["phase"], "response_complete");
         assert_eq!(value["backend_kind"], "official-cli");
         assert_eq!(value["prompt_text"], "summarize the repository");
         assert_eq!(value["prompt_summary"], "summarize the repository");
@@ -1063,7 +1084,7 @@ mod tests {
             trusted: false,
         });
         shell.emit(
-            HookPhase::SessionStart,
+            HookPhase::ResponseComplete,
             HookContext {
                 backend_kind: BackendKind::OfficialCli,
                 execution_session: test_session(
@@ -1162,5 +1183,57 @@ mod tests {
         path.to_string_lossy()
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preflight_hook_times_out_quickly_with_tight_timeout() {
+        use std::time::Instant;
+
+        // Create a hook adapter that will sleep for 5 seconds (well past the 500ms pre-flight limit)
+        let command_path = write_hook_script("#!/bin/sh\nsleep 5\n");
+        let shell = HookShell::from_config(
+            HookAdapterConfig {
+                enabled: true,
+                command: Some(command_path.to_string_lossy().to_string()),
+                args: Vec::new(),
+                timeout_ms: 30_000,
+                trusted: false,
+            },
+            Duration::from_secs(30),
+        );
+
+        let start = Instant::now();
+        shell.emit(
+            HookPhase::BeforePromptSend,
+            HookContext {
+                backend_kind: BackendKind::OfficialCli,
+                execution_session: test_session(
+                    &env::current_dir().expect("current dir should be available"),
+                ),
+                cwd: env::current_dir().expect("current dir should be available"),
+                prompt_text: "test".to_string(),
+                prompt_summary: "test".to_string(),
+                stdout: None,
+                stderr: None,
+                exit_code: None,
+                error: None,
+            },
+        );
+        let elapsed = start.elapsed();
+
+        // Should timeout after ~500ms, much less than the default 30s
+        assert!(
+            elapsed.as_millis() < 1000,
+            "preflight hook should timeout quickly (< 1s), but took {elapsed:?}"
+        );
+
+        // Pre-flight timeout is warn-only: no diagnostic should be recorded
+        let diagnostics = shell.diagnostics();
+        assert_eq!(
+            diagnostics.len(),
+            0,
+            "pre-flight timeout should warn and return, not record a diagnostic"
+        );
     }
 }

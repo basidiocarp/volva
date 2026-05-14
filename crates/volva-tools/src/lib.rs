@@ -57,7 +57,11 @@ mod tests {
     fn all_tools_have_non_empty_name_and_description() {
         for spec in builtin_specs() {
             assert!(!spec.name.is_empty(), "empty name");
-            assert!(!spec.description.is_empty(), "empty description for {}", spec.name);
+            assert!(
+                !spec.description.is_empty(),
+                "empty description for {}",
+                spec.name
+            );
         }
     }
 
@@ -74,7 +78,10 @@ mod tests {
     fn contains_expected_tools() {
         let names: Vec<String> = builtin_specs().into_iter().map(|s| s.name).collect();
         for expected in ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch"] {
-            assert!(names.iter().any(|n| n == expected), "missing tool: {expected}");
+            assert!(
+                names.iter().any(|n| n == expected),
+                "missing tool: {expected}"
+            );
         }
     }
 }

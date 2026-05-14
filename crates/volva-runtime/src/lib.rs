@@ -315,7 +315,7 @@ mod tests {
     }
 
     impl HookAdapter for ForwardingHookAdapter {
-        fn handle(&self, event: HookEvent) {
+        fn handle(&self, event: HookEvent, _phase: HookPhase) {
             self.events
                 .lock()
                 .expect("hook adapter mutex should not be poisoned")
