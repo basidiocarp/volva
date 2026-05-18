@@ -87,7 +87,9 @@ impl CallbackServer {
                 .await;
 
             if read_result.is_err() || request_line.len() > 4096 {
-                warn!("Anthropic OAuth callback request line exceeded size limit or read failed; rejecting");
+                warn!(
+                    "Anthropic OAuth callback request line exceeded size limit or read failed; rejecting"
+                );
                 write_browser_response(
                     &mut writer,
                     self.target,
