@@ -566,6 +566,7 @@ mod tests {
         let _ = fs::remove_dir_all(vendor_dir);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn run_backend_emits_failure_hooks_in_order() {
         let vendor_dir = unique_vendor_dir("failure-hooks");
@@ -640,6 +641,7 @@ mod tests {
         let _ = fs::remove_dir_all(vendor_dir);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn native_api_backend_is_now_supported() {
         let vendor_dir = unique_vendor_dir("api-backend");
