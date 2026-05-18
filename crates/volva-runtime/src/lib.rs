@@ -198,7 +198,7 @@ impl RuntimeBootstrap {
             })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, not(windows)))]
     #[must_use]
     pub(crate) fn hook_events(&self) -> Vec<HookEvent> {
         self.hooks.events()
@@ -320,13 +320,17 @@ mod tests {
     #[cfg(not(windows))]
     use std::time::{SystemTime, UNIX_EPOCH};
     use volva_config::VolvaConfig;
+    #[cfg(not(windows))]
     use volva_core::{
         BackendKind, ExecutionMode, ExecutionParticipantIdentity, ExecutionSessionIdentity,
         ExecutionSessionState, OperationMode, WorkspaceBinding,
     };
 
-    use crate::{BackendRunRequest, HookAdapter, HookEvent, HookPhase, HookShell, context};
+    use crate::{HookAdapter, HookEvent, HookPhase};
+    #[cfg(not(windows))]
+    use crate::{BackendRunRequest, HookShell, context};
 
+    #[cfg(not(windows))]
     fn test_session(cwd: &str, backend: BackendKind) -> ExecutionSessionIdentity {
         ExecutionSessionIdentity::new(
             ExecutionMode::Run,
@@ -340,6 +344,7 @@ mod tests {
         )
     }
 
+    #[cfg(not(windows))]
     fn test_request(prompt: &str, cwd: &str, backend: BackendKind) -> BackendRunRequest {
         BackendRunRequest {
             prompt: prompt.to_string(),

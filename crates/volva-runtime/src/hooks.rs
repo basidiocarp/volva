@@ -584,13 +584,13 @@ fn render_command_line_part(part: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 #[derive(Debug, Default)]
 struct RecordingHookAdapter {
     events: Arc<std::sync::Mutex<Vec<HookEvent>>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 impl RecordingHookAdapter {
     fn events(&self) -> Vec<HookEvent> {
         self.events
@@ -600,7 +600,7 @@ impl RecordingHookAdapter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 impl HookAdapter for RecordingHookAdapter {
     fn handle(&self, event: HookEvent, _phase: HookPhase) {
         self.events
@@ -616,7 +616,7 @@ pub struct HookShell {
     adapter_state: HookAdapterState,
     #[cfg_attr(not(test), allow(dead_code))]
     diagnostics: Arc<Mutex<Vec<String>>>,
-    #[cfg(test)]
+    #[cfg(all(test, not(windows)))]
     recorder: Option<Arc<RecordingHookAdapter>>,
 }
 
@@ -627,7 +627,7 @@ impl HookShell {
             adapter: Arc::new(NoopHookAdapter),
             adapter_state: HookAdapterState::Disabled,
             diagnostics: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(test)]
+            #[cfg(all(test, not(windows)))]
             recorder: None,
         }
     }
@@ -677,7 +677,7 @@ impl HookShell {
             adapter,
             adapter_state,
             diagnostics,
-            #[cfg(test)]
+            #[cfg(all(test, not(windows)))]
             recorder: None,
         }
     }
@@ -691,7 +691,7 @@ impl HookShell {
             adapter: Arc::new(adapter),
             adapter_state: HookAdapterState::ActiveInjected,
             diagnostics: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(test)]
+            #[cfg(all(test, not(windows)))]
             recorder: None,
         }
     }
@@ -715,7 +715,7 @@ impl HookShell {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 impl HookShell {
     #[must_use]
     pub(crate) fn recording() -> Self {
