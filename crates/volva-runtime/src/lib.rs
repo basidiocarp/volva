@@ -326,9 +326,9 @@ mod tests {
         ExecutionSessionState, OperationMode, WorkspaceBinding,
     };
 
-    use crate::{HookAdapter, HookEvent, HookPhase};
     #[cfg(not(windows))]
     use crate::{BackendRunRequest, HookShell, context};
+    use crate::{HookAdapter, HookEvent, HookPhase};
 
     #[cfg(not(windows))]
     fn test_session(cwd: &str, backend: BackendKind) -> ExecutionSessionIdentity {
