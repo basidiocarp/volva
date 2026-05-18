@@ -6,7 +6,7 @@ pub mod pkce;
 use std::time::Duration;
 
 use crate::types::{AnthropicLoginRequest, AnthropicLoginResult, StoredAnthropicTokens};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use spore::logging::{SpanContext, workflow_span};
 use uuid::Uuid;
 use volva_core::AuthTarget;
@@ -121,12 +121,6 @@ impl AnthropicLoginSession {
                 let _api_key_span =
                     workflow_span("anthropic_api_key_mint", &span_context).entered();
                 Some(oauth::create_api_key(&token_response.access_token, &span_context).await?)
-            }
-            _ => {
-                bail!(
-                    "Anthropic login target `{}` is not supported by this build",
-                    self.request.target
-                )
             }
         };
 

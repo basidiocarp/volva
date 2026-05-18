@@ -317,10 +317,6 @@ impl ExecEnv {
     pub fn setup_worktree(&self, repo_root: &Path, branch: &str) -> Result<PathBuf> {
         let worktree_path = self.working_dir.join("worktree");
 
-        if worktree_path.exists() {
-            return Ok(worktree_path);
-        }
-
         let output = std::process::Command::new("git")
             .args([
                 "-C",
@@ -340,6 +336,11 @@ impl ExecEnv {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_str = stderr.as_ref();
+            // Treat "already exists" or "already checked out" as idempotent success
+            if stderr_str.contains("already exists") || stderr_str.contains("already checked out") {
+                return Ok(worktree_path);
+            }
             anyhow::bail!(
                 "git worktree add failed for `{}`: {stderr}",
                 worktree_path.display()

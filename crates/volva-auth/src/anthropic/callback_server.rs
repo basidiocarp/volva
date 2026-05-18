@@ -81,11 +81,21 @@ impl CallbackServer {
             let (reader, mut writer) = stream.into_split();
             let mut reader = BufReader::new(reader);
             let mut request_line = String::new();
-            reader
+            let read_result = reader
                 .read_line(&mut request_line)
                 .instrument(wait_span.clone())
-                .await
-                .context("failed to read Anthropic OAuth callback request")?;
+                .await;
+
+            if read_result.is_err() || request_line.len() > 4096 {
+                warn!("Anthropic OAuth callback request line exceeded size limit or read failed; rejecting");
+                write_browser_response(
+                    &mut writer,
+                    self.target,
+                    &Err(anyhow!("request line malformed or too large")),
+                )
+                .await?;
+                continue;
+            }
 
             let mut header_bytes_read: usize = 0;
             let header_too_large = loop {

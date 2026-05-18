@@ -69,15 +69,17 @@ pub(crate) fn check_credential_permissions(path: &std::path::Path) -> Result<()>
 
 pub fn load_tokens(provider: AuthProvider) -> Result<Option<StoredAnthropicTokens>> {
     let path = provider_tokens_path_required(provider)?;
-    if !path.exists() {
-        return Ok(None);
-    }
+
+    let raw = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
 
     // On Unix, reject credential files that are readable by group or other.
     #[cfg(unix)]
     check_credential_permissions(&path)?;
 
-    let raw = fs::read_to_string(&path)?;
     let tokens = serde_json::from_str::<StoredAnthropicTokens>(&raw)?;
     Ok(Some(tokens))
 }

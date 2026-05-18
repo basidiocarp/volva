@@ -68,17 +68,21 @@ pub fn finalize_login(
             }
             AuthMode::ApiKey
         }
-        _ => bail!("unsupported Anthropic login target"),
     };
 
     let (stored_access_token, stored_refresh_token, stored_expires_at, stored_scopes) =
         if matches!(credential_mode, AuthMode::ApiKey) {
             (String::new(), None, None, scopes)
         } else {
+            let expires_at = if let Some(expires_in) = token_response.expires_in {
+                Some(expires_at_epoch_seconds(expires_in)?)
+            } else {
+                None
+            };
             (
                 token_response.access_token.clone(),
                 token_response.refresh_token.clone(),
-                token_response.expires_in.map(expires_at_epoch_seconds),
+                expires_at,
                 scopes,
             )
         };
@@ -114,13 +118,12 @@ fn resolve_subscription_type(account: &AnthropicAccountPayload) -> Option<String
         .filter(|value| !value.is_empty())
 }
 
-fn expires_at_epoch_seconds(expires_in_seconds: u64) -> u64 {
+fn expires_at_epoch_seconds(expires_in_seconds: u64) -> Result<u64> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|error| anyhow!("system clock is before the unix epoch: {error}"))
-        .unwrap_or_default()
+        .map_err(|error| anyhow!("system clock is before the unix epoch: {error}"))?
         .as_secs();
-    now.saturating_add(expires_in_seconds)
+    Ok(now.saturating_add(expires_in_seconds))
 }
 
 #[cfg(test)]

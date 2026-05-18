@@ -5,9 +5,12 @@ use std::{
     io::{ErrorKind, Write},
     path::PathBuf,
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -548,13 +551,12 @@ impl TempIoFile {
 }
 
 fn unique_temp_io_path(prefix: &str, attempt: usize) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock should be monotonic")
-        .as_nanos();
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     env::temp_dir().join(format!(
-        "volva-hook-{prefix}-{}-{stamp}-{attempt}.tmp",
-        std::process::id()
+        "volva-hook-{prefix}-{}-{}-{attempt}.tmp",
+        std::process::id(),
+        n
     ))
 }
 
