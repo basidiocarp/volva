@@ -1,7 +1,8 @@
-//! Placeholder bridge configuration.
+//! Bridge configuration.
 //!
 //! This crate provides basic bridge configuration (enabled/disabled state and server URL).
-//! Real implementation pending: schema support, profile loading, and backend discovery.
+//! The enabled state is loaded from `VolvaConfig.experimental_bridge` at runtime.
+//! Additional fields (schema support, profile loading) may be added in future versions.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeConfig {

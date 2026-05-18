@@ -1,7 +1,7 @@
-//! Placeholder adapter registry.
+//! Hook adapter registry.
 //!
-//! This crate provides a hardcoded list of available hook adapters.
-//! Real implementation pending: discovery from the filesystem or a manifest.
+//! This crate provides the hardcoded list of available hook adapters.
+//! Currently static; future implementations may add filesystem discovery or manifest-based loading.
 
 #[must_use]
 pub fn adapter_names() -> Vec<&'static str> {

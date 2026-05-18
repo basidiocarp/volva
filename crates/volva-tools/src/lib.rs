@@ -1,7 +1,7 @@
-//! Placeholder tool specification registry.
+//! Tool specification registry.
 //!
-//! This crate provides a hardcoded list of available tools.
-//! Real implementation pending: dynamic tool loading, capability negotiation, and policy-based tool filtering.
+//! This crate provides the static list of available builtin tools.
+//! Currently hardcoded; future implementations may add dynamic tool loading and policy-based filtering.
 
 use volva_core::ToolSpec;
 
