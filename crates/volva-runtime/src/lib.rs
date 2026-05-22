@@ -179,23 +179,58 @@ impl RuntimeBootstrap {
                 )
             })?;
         }
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    anyhow::anyhow!("another volva session is already active in this workspace")
-                } else {
-                    anyhow::Error::from(e)
+
+        let pid = std::process::id().to_string();
+
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(mut file) => {
+                    use std::io::Write;
+                    file.write_all(pid.as_bytes()).with_context(|| {
+                        format!(
+                            "failed to write PID to session lock at `{}`",
+                            lock_path.display()
+                        )
+                    })?;
+                    return Ok(file);
                 }
-            })
-            .with_context(|| {
-                format!(
-                    "failed to acquire session lock at `{}`",
-                    lock_path.display()
-                )
-            })
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if let Ok(existing_pid_str) = fs::read_to_string(&lock_path)
+                        && let Ok(existing_pid) = existing_pid_str.trim().parse::<u32>()
+                        && !process_is_alive(existing_pid)
+                    {
+                        // TOCTOU: a concurrent process could acquire a new lock between this check
+                        // and the remove_file below. If that happens, the remove deletes the new
+                        // lock, and both processes may briefly think they hold it. For a
+                        // single-workstation use case this race is extremely unlikely; both
+                        // processes will attempt create_new next and only one can succeed (O_EXCL).
+                        fs::remove_file(&lock_path).with_context(|| {
+                            format!(
+                                "failed to remove stale session lock at `{}`",
+                                lock_path.display()
+                            )
+                        })?;
+                        continue;
+                    }
+                    // Lock file exists with either a live PID or unparseable content
+                    return Err(anyhow::anyhow!(
+                        "another volva session is already active in this workspace"
+                    ));
+                }
+                Err(e) => {
+                    return Err(anyhow::Error::from(e)).with_context(|| {
+                        format!(
+                            "failed to acquire session lock at `{}`",
+                            lock_path.display()
+                        )
+                    });
+                }
+            }
+        }
     }
 
     #[cfg(all(test, not(windows)))]
@@ -307,6 +342,17 @@ fn span_context_for_request(request: &BackendRunRequest) -> SpanContext {
         .with_tool("run_backend")
         .with_session_id(request.session.session_id.as_str().to_string())
         .with_workspace_root(request.session.workspace.workspace_root.clone())
+}
+
+fn process_is_alive(pid: u32) -> bool {
+    use nix::errno::Errno;
+    use nix::unistd::Pid;
+
+    let nix_pid = Pid::from_raw(pid.cast_signed());
+    // kill with None (just check) succeeds if the process exists.
+    // ESRCH means the process doesn't exist; all other results (Ok or other errors)
+    // mean the process exists but we may lack permission to signal it.
+    !matches!(nix::sys::signal::kill(nix_pid, None), Err(Errno::ESRCH))
 }
 
 #[cfg(test)]
@@ -882,5 +928,13 @@ mod tests {
 
         let _ = fs::remove_dir_all(vendor_dir);
         let _ = fs::remove_dir_all(workspace_dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn process_is_alive_detects_stale_pid() {
+        // A definitely-dead PID (one that cannot exist on any system)
+        let stale_pid = 1_000_000_000u32;
+        assert!(!super::process_is_alive(stale_pid), "impossibly high PID should be detected as dead");
     }
 }
