@@ -33,6 +33,8 @@ impl SqliteCheckpointSaver {
                 path.display()
             ))
         })?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .map_err(|e| CheckpointError::Storage(format!("failed to enable WAL mode: {e}")))?;
         Self::init_schema(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
