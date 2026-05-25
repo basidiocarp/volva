@@ -1,9 +1,9 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use tracing::warn;
@@ -183,6 +183,39 @@ struct ProtocolResource {
     uri: String,
 }
 
+fn log_schema_mismatch(got: &str, expected: &str) {
+    // Determine the log path: data_dir → home_dir → /tmp
+    let log_path = if let Some(data_dir) = dirs::data_dir() {
+        data_dir.join("volva").join("schema-mismatch.log")
+    } else if let Ok(home) = std::env::var("HOME") {
+        Path::new(&home).join(".local").join("share").join("volva").join("schema-mismatch.log")
+    } else {
+        Path::new("/tmp").join("volva-schema-mismatch.log")
+    };
+
+    // Best-effort: create parent directories and append the entry.
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    // Format timestamp as UNIX seconds since we don't have chrono available.
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+
+    let entry = format!(
+        "{{\"ts\":{timestamp},\"got\":\"{got}\",\"expected\":\"{expected}\"}}\n"
+    );
+
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        let _ = f.write_all(entry.as_bytes());
+    }
+}
+
 fn load_memory_protocol_block(workspace_root: &str) -> Option<String> {
     let _ = workspace_root;
     load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND)
@@ -231,6 +264,7 @@ fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
                         expected = HYPHAE_PROTOCOL_SCHEMA_VERSION,
                         "volva: hyphae protocol schema version mismatch — context injection skipped"
                     );
+                    log_schema_mismatch(&surface.schema_version, HYPHAE_PROTOCOL_SCHEMA_VERSION);
                     return None;
                 }
                 return Some(format_memory_protocol_block(&surface));
@@ -683,5 +717,12 @@ mod tests {
             20,
             "baseline mode should have recall_limit of 20"
         );
+    }
+
+    #[test]
+    fn hyphae_protocol_schema_version_is_pinned() {
+        // If this test fails, the hyphae protocol schema changed and volva needs
+        // to be updated to handle both the old and new formats, or accept the new version.
+        assert_eq!(super::HYPHAE_PROTOCOL_SCHEMA_VERSION, "1.0");
     }
 }

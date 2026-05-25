@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+dirs.workspace = true
 nix = { version = "0.29", features = ["process", "signal"] }
 rusqlite = { version = "0.39", features = ["bundled"] }
 serde.workspace = true
