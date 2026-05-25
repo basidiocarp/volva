@@ -221,12 +221,16 @@ fn load_memory_protocol_block(workspace_root: &str) -> Option<String> {
     load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND)
 }
 
+fn canonicalize_workspace_root(workspace_root: &str) -> String {
+    std::fs::canonicalize(workspace_root)
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .unwrap_or_else(|| workspace_root.to_string())
+}
+
 fn load_session_recall_block(workspace_root: &str, caps: &Capabilities) -> Option<String> {
-    let project = Path::new(workspace_root)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(workspace_root);
-    load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, project, caps.recall_limit())
+    let project = canonicalize_workspace_root(workspace_root);
+    load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, &project, caps.recall_limit())
 }
 
 fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
@@ -724,5 +728,26 @@ mod tests {
         // If this test fails, the hyphae protocol schema changed and volva needs
         // to be updated to handle both the old and new formats, or accept the new version.
         assert_eq!(super::HYPHAE_PROTOCOL_SCHEMA_VERSION, "1.0");
+    }
+
+    #[test]
+    fn canonicalize_workspace_root_returns_full_path_for_existing_directory() {
+        let dir = std::env::temp_dir();
+        let input = dir.to_string_lossy().to_string();
+        let result = super::canonicalize_workspace_root(&input);
+        let canonical = std::fs::canonicalize(&dir).expect("temp dir must canonicalize");
+        assert_eq!(result, canonical.to_string_lossy().as_ref());
+        // Must be an absolute path, not a bare basename.
+        assert!(
+            result.contains('/'),
+            "result must be a full path, not just a basename: {result}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_workspace_root_falls_back_to_raw_path_for_nonexistent_directory() {
+        let fake = "/nonexistent/volva-test-path-that-does-not-exist";
+        let result = super::canonicalize_workspace_root(fake);
+        assert_eq!(result, fake, "nonexistent path must fall back to the raw input");
     }
 }
