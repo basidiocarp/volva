@@ -133,9 +133,16 @@ impl RuntimeBootstrap {
         }
         let payload =
             serde_json::to_vec_pretty(&surface).context("failed to serialize execution session")?;
-        fs::write(&path, payload).with_context(|| {
+        let tmp_path = path.with_extension("tmp");
+        fs::write(&tmp_path, &payload).with_context(|| {
             format!(
-                "failed to persist execution session snapshot at `{}`",
+                "failed to write execution session snapshot to temp file `{}`",
+                tmp_path.display()
+            )
+        })?;
+        fs::rename(&tmp_path, &path).with_context(|| {
+            format!(
+                "failed to atomically persist execution session snapshot at `{}`",
                 path.display()
             )
         })?;

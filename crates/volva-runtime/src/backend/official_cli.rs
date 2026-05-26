@@ -61,8 +61,14 @@ fn run_with_timeout(
 
     // Collect stdout and stderr on background threads so that the pipes do not
     // block the child from making progress while we poll for exit.
-    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
-    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    let mut stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("backend subprocess stdout pipe was not captured"))?;
+    let mut stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("backend subprocess stderr pipe was not captured"))?;
 
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>();
     let (stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>();
