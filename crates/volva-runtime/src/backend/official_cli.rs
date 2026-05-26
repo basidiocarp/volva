@@ -13,13 +13,17 @@ use crate::{BackendRunRequest, context::PreparedPrompt};
 
 use super::BackendRunResult;
 
-/// Hard deadline for the official CLI backend subprocess.
+/// Get the hard deadline for the official CLI backend subprocess.
 ///
 /// After this duration the child process is killed and an error is returned.
-/// The value is intentionally conservative: interactive Claude CLI sessions
-/// are expected to complete within a few minutes; anything that runs much
-/// longer is more likely a hang than useful work.
-const BACKEND_SUBPROCESS_TIMEOUT: Duration = Duration::from_mins(1);
+/// Configurable via the `VOLVA_BACKEND_TIMEOUT_SECS` environment variable;
+/// defaults to 1800 seconds (30 minutes) to accommodate long-running sessions.
+fn backend_subprocess_timeout() -> Duration {
+    std::env::var("VOLVA_BACKEND_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(Duration::from_mins(30), Duration::from_secs)
+}
 
 /// Poll interval while waiting for the backend subprocess to exit.
 const BACKEND_SUBPROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -33,7 +37,7 @@ pub fn run(
         command,
         request,
         prepared_prompt,
-        BACKEND_SUBPROCESS_TIMEOUT,
+        backend_subprocess_timeout(),
     )
 }
 
