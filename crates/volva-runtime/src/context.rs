@@ -217,8 +217,8 @@ fn log_schema_mismatch(got: &str, expected: &str) {
 }
 
 fn load_memory_protocol_block(workspace_root: &str) -> Option<String> {
-    let _ = workspace_root;
-    load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND)
+    let project = canonicalize_workspace_root(workspace_root);
+    load_memory_protocol_block_from_command(HYPHAE_PROTOCOL_COMMAND, &project)
 }
 
 fn canonicalize_workspace_root(workspace_root: &str) -> String {
@@ -233,9 +233,9 @@ fn load_session_recall_block(workspace_root: &str, caps: &Capabilities) -> Optio
     load_session_recall_block_from_command(HYPHAE_PROTOCOL_COMMAND, &project, caps.recall_limit())
 }
 
-fn load_memory_protocol_block_from_command(command: &str) -> Option<String> {
+fn load_memory_protocol_block_from_command(command: &str, project: &str) -> Option<String> {
     let mut command = Command::new(command);
-    command.arg("protocol");
+    command.args(["protocol", "--project", project]);
 
     let mut child = command
         .stdin(Stdio::null())
@@ -593,11 +593,11 @@ mod tests {
 
         let command = write_test_command(
             "success",
-            "test \"$1\" = \"protocol\"\nprintf '%s' '{\"schema_version\":\"1.0\",\"summary\":\"Recall selectively at task start.\",\"recall\":{\"tools\":[\"hyphae_gather_context\",\"hyphae_memory_recall\"],\"passive_resource_uri\":\"hyphae://context/current\"},\"store\":{\"tool\":\"hyphae_memory_store\",\"project_topics\":[\"context/{project}\",\"decisions/{project}\"]},\"resources\":[{\"uri\":\"hyphae://protocol/current\"}]}'",
+            "test \"$1\" = \"protocol\" && test \"$2\" = \"--project\" && test \"$3\" = \"test-project\"\nprintf '%s' '{\"schema_version\":\"1.0\",\"summary\":\"Recall selectively at task start.\",\"recall\":{\"tools\":[\"hyphae_gather_context\",\"hyphae_memory_recall\"],\"passive_resource_uri\":\"hyphae://context/current\"},\"store\":{\"tool\":\"hyphae_memory_store\",\"project_topics\":[\"context/{project}\",\"decisions/{project}\"]},\"resources\":[{\"uri\":\"hyphae://protocol/current\"}]}'",
         );
 
         let protocol =
-            super::load_memory_protocol_block_from_command(command.to_string_lossy().as_ref())
+            super::load_memory_protocol_block_from_command(command.to_string_lossy().as_ref(), "test-project")
                 .expect("protocol command should be parsed");
 
         assert!(protocol.starts_with("[hyphae-memory-protocol]"));
@@ -674,7 +674,7 @@ mod tests {
     fn load_memory_protocol_block_from_command_returns_none_on_nonexistent_command() {
         // A command that does not exist should fail to spawn and return None gracefully.
         // This exercises the timeout path without requiring a slow sleep.
-        let block = super::load_memory_protocol_block_from_command("/nonexistent/hyphae-cmd");
+        let block = super::load_memory_protocol_block_from_command("/nonexistent/hyphae-cmd", "testproject");
 
         assert!(
             block.is_none(),

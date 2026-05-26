@@ -279,6 +279,18 @@ impl RuntimeBootstrap {
             );
 
             if existing_workspace_id == incoming_workspace_id && is_active {
+                // Explicitly release the session lock before rejecting the request.
+                // std::fs::File::drop() only closes the file descriptor; it does not remove
+                // the lock file from disk. We must manually remove it to avoid leaving a
+                // stale lock file that would block all subsequent calls to run_backend.
+                drop(lock_guard);
+                if let Err(e) = fs::remove_file(self.session_lock_path()) {
+                    tracing::warn!(
+                        "failed to remove session lock file after cardinality rejection: {}",
+                        e
+                    );
+                }
+
                 return Err(anyhow::anyhow!(
                     "workspace {} already has an active session ({}); end it before starting a new one",
                     existing_workspace_id,
