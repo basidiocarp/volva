@@ -207,6 +207,11 @@ impl WorkspaceBinding {
         let path = root.as_ref();
         let workspace_root = path.display().to_string();
         let workspace_id = std::fs::canonicalize(path)
+            .map_err(|err| {
+                tracing::warn!(
+                    "workspace path canonicalization failed, falling back to raw path: {err}"
+                );
+            })
             .ok()
             .and_then(|p| p.to_str().map(ToString::to_string))
             .unwrap_or_else(|| workspace_root.clone());

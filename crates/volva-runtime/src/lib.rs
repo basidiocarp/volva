@@ -168,6 +168,11 @@ impl RuntimeBootstrap {
         if surface.session.workspace.workspace_id.is_empty() {
             surface.session.workspace.workspace_id =
                 std::fs::canonicalize(&surface.session.workspace.workspace_root)
+                    .map_err(|err| {
+                        tracing::warn!(
+                            "workspace path canonicalization failed, falling back to raw path: {err}"
+                        );
+                    })
                     .ok()
                     .and_then(|p| p.to_str().map(ToString::to_string))
                     .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
