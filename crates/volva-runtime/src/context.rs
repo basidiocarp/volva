@@ -188,7 +188,11 @@ fn log_schema_mismatch(got: &str, expected: &str) {
     let log_path = if let Some(data_dir) = dirs::data_dir() {
         data_dir.join("volva").join("schema-mismatch.log")
     } else if let Ok(home) = std::env::var("HOME") {
-        Path::new(&home).join(".local").join("share").join("volva").join("schema-mismatch.log")
+        Path::new(&home)
+            .join(".local")
+            .join("share")
+            .join("volva")
+            .join("schema-mismatch.log")
     } else {
         Path::new("/tmp").join("volva-schema-mismatch.log")
     };
@@ -203,9 +207,7 @@ fn log_schema_mismatch(got: &str, expected: &str) {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
 
-    let entry = format!(
-        "{{\"ts\":{timestamp},\"got\":\"{got}\",\"expected\":\"{expected}\"}}\n"
-    );
+    let entry = format!("{{\"ts\":{timestamp},\"got\":\"{got}\",\"expected\":\"{expected}\"}}\n");
 
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -596,9 +598,11 @@ mod tests {
             "test \"$1\" = \"protocol\" && test \"$2\" = \"--project\" && test \"$3\" = \"test-project\"\nprintf '%s' '{\"schema_version\":\"1.0\",\"summary\":\"Recall selectively at task start.\",\"recall\":{\"tools\":[\"hyphae_gather_context\",\"hyphae_memory_recall\"],\"passive_resource_uri\":\"hyphae://context/current\"},\"store\":{\"tool\":\"hyphae_memory_store\",\"project_topics\":[\"context/{project}\",\"decisions/{project}\"]},\"resources\":[{\"uri\":\"hyphae://protocol/current\"}]}'",
         );
 
-        let protocol =
-            super::load_memory_protocol_block_from_command(command.to_string_lossy().as_ref(), "test-project")
-                .expect("protocol command should be parsed");
+        let protocol = super::load_memory_protocol_block_from_command(
+            command.to_string_lossy().as_ref(),
+            "test-project",
+        )
+        .expect("protocol command should be parsed");
 
         assert!(protocol.starts_with("[hyphae-memory-protocol]"));
         assert!(protocol.contains("project: none"));
@@ -674,7 +678,10 @@ mod tests {
     fn load_memory_protocol_block_from_command_returns_none_on_nonexistent_command() {
         // A command that does not exist should fail to spawn and return None gracefully.
         // This exercises the timeout path without requiring a slow sleep.
-        let block = super::load_memory_protocol_block_from_command("/nonexistent/hyphae-cmd", "testproject");
+        let block = super::load_memory_protocol_block_from_command(
+            "/nonexistent/hyphae-cmd",
+            "testproject",
+        );
 
         assert!(
             block.is_none(),
@@ -748,6 +755,9 @@ mod tests {
     fn canonicalize_workspace_root_falls_back_to_raw_path_for_nonexistent_directory() {
         let fake = "/nonexistent/volva-test-path-that-does-not-exist";
         let result = super::canonicalize_workspace_root(fake);
-        assert_eq!(result, fake, "nonexistent path must fall back to the raw input");
+        assert_eq!(
+            result, fake,
+            "nonexistent path must fall back to the raw input"
+        );
     }
 }

@@ -166,16 +166,17 @@ impl RuntimeBootstrap {
 
         // Backfill workspace_id from workspace_root if empty (backwards compatibility)
         if surface.session.workspace.workspace_id.is_empty() {
-            surface.session.workspace.workspace_id =
-                std::fs::canonicalize(&surface.session.workspace.workspace_root)
-                    .map_err(|err| {
-                        tracing::warn!(
-                            "workspace path canonicalization failed, falling back to raw path: {err}"
-                        );
-                    })
-                    .ok()
-                    .and_then(|p| p.to_str().map(ToString::to_string))
-                    .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
+            surface.session.workspace.workspace_id = std::fs::canonicalize(
+                &surface.session.workspace.workspace_root,
+            )
+            .map_err(|err| {
+                tracing::warn!(
+                    "workspace path canonicalization failed, falling back to raw path: {err}"
+                );
+            })
+            .ok()
+            .and_then(|p| p.to_str().map(ToString::to_string))
+            .unwrap_or_else(|| surface.session.workspace.workspace_root.clone());
         }
 
         Ok(Some(surface))
@@ -959,6 +960,9 @@ mod tests {
     fn process_is_alive_detects_stale_pid() {
         // A definitely-dead PID (one that cannot exist on any system)
         let stale_pid = 1_000_000_000u32;
-        assert!(!super::process_is_alive(stale_pid), "impossibly high PID should be detected as dead");
+        assert!(
+            !super::process_is_alive(stale_pid),
+            "impossibly high PID should be detected as dead"
+        );
     }
 }
