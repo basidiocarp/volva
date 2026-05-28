@@ -369,6 +369,7 @@ fn span_context_for_request(request: &BackendRunRequest) -> SpanContext {
         .with_workspace_root(request.session.workspace.workspace_root.clone())
 }
 
+#[cfg(unix)]
 fn process_is_alive(pid: u32) -> bool {
     use nix::errno::Errno;
     use nix::unistd::Pid;
@@ -378,6 +379,12 @@ fn process_is_alive(pid: u32) -> bool {
     // ESRCH means the process doesn't exist; all other results (Ok or other errors)
     // mean the process exists but we may lack permission to signal it.
     !matches!(nix::sys::signal::kill(nix_pid, None), Err(Errno::ESRCH))
+}
+
+#[cfg(not(unix))]
+fn process_is_alive(_pid: u32) -> bool {
+    // On non-Unix platforms, conservatively assume the lock holder is alive.
+    true
 }
 
 #[cfg(test)]
