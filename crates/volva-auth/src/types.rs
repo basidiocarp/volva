@@ -5,6 +5,11 @@ use volva_core::{
     AuthMode, AuthProvider, AuthTarget, ResolvedCredential, StoredCredentialMetadata,
 };
 
+/// Tokens within this many seconds of expiry are treated as already expired,
+/// so a near-expiry credential is never handed to a live request (no refresh
+/// flow exists yet to recover from a mid-flight 401).
+const AUTH_EXPIRY_BUFFER_SECS: u64 = 300;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicLoginRequest {
     pub target: AuthTarget,
@@ -58,7 +63,10 @@ impl StoredAnthropicTokens {
     #[must_use]
     pub fn is_expired_at(&self, now_epoch_seconds: u64) -> bool {
         matches!(self.auth_mode(), Some(AuthMode::BearerToken))
-            && matches!(self.expires_at, Some(expires_at) if expires_at <= now_epoch_seconds)
+            && matches!(
+                self.expires_at,
+                Some(expires_at) if expires_at <= now_epoch_seconds.saturating_add(AUTH_EXPIRY_BUFFER_SECS)
+            )
     }
 
     #[must_use]
@@ -113,4 +121,113 @@ impl StoredAnthropicTokens {
 
 const fn default_auth_target() -> AuthTarget {
     AuthTarget::ClaudeAi
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bearer_token_within_buffer_is_expired() {
+        let now = 1_000_000u64;
+        let stored = StoredAnthropicTokens {
+            access_token: "token".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + 299),
+            scopes: vec!["user:inference".to_string()],
+            email: None,
+            organization_id: None,
+            subscription_type: None,
+            api_key: None,
+            target: AuthTarget::ClaudeAi,
+        };
+
+        assert!(
+            stored.is_expired_at(now),
+            "token with 299s margin should be expired"
+        );
+    }
+
+    #[test]
+    fn bearer_token_outside_buffer_is_valid() {
+        let now = 1_000_000u64;
+        let stored = StoredAnthropicTokens {
+            access_token: "token".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + 301),
+            scopes: vec!["user:inference".to_string()],
+            email: None,
+            organization_id: None,
+            subscription_type: None,
+            api_key: None,
+            target: AuthTarget::ClaudeAi,
+        };
+
+        assert!(
+            !stored.is_expired_at(now),
+            "token with 301s margin should be valid"
+        );
+    }
+
+    #[test]
+    fn bearer_token_at_exact_buffer_is_expired() {
+        let now = 1_000_000u64;
+        let stored = StoredAnthropicTokens {
+            access_token: "token".to_string(),
+            refresh_token: None,
+            expires_at: Some(now + 300),
+            scopes: vec!["user:inference".to_string()],
+            email: None,
+            organization_id: None,
+            subscription_type: None,
+            api_key: None,
+            target: AuthTarget::ClaudeAi,
+        };
+        assert!(
+            stored.is_expired_at(now),
+            "token at exactly the buffer boundary should be expired"
+        );
+    }
+
+    #[test]
+    fn api_key_not_expired_regardless_of_expiry_time() {
+        let now = 1_000_000u64;
+        let stored = StoredAnthropicTokens {
+            access_token: "token".to_string(),
+            refresh_token: None,
+            expires_at: Some(100),
+            scopes: vec![],
+            email: None,
+            organization_id: None,
+            subscription_type: None,
+            api_key: Some("api-key".to_string()),
+            target: AuthTarget::ClaudeAi,
+        };
+
+        assert!(
+            !stored.is_expired_at(now),
+            "api key should never be expired, even with past expires_at"
+        );
+    }
+
+    #[test]
+    fn no_auth_mode_not_expired() {
+        let now = 1_000_000u64;
+        let stored = StoredAnthropicTokens {
+            access_token: "token".to_string(),
+            refresh_token: None,
+            expires_at: Some(100),
+            scopes: vec![],
+            email: None,
+            organization_id: None,
+            subscription_type: None,
+            api_key: None,
+            target: AuthTarget::ClaudeAi,
+        };
+
+        assert!(
+            !stored.is_expired_at(now),
+            "credential with no auth mode should not be expired"
+        );
+    }
 }

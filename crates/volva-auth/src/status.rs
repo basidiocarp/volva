@@ -111,7 +111,7 @@ mod tests {
         let saved = StoredAnthropicTokens {
             access_token: "saved-access".to_string(),
             refresh_token: Some("refresh".to_string()),
-            expires_at: Some(1_700_000_100),
+            expires_at: Some(1_700_000_400),
             scopes: vec!["user:inference".to_string()],
             email: Some("saved@example.com".to_string()),
             organization_id: Some("org_123".to_string()),
@@ -143,7 +143,7 @@ mod tests {
                 email: Some("saved@example.com".to_string()),
                 organization_id: Some("org_123".to_string()),
                 subscription_type: Some("pro".to_string()),
-                expires_at: Some(1_700_000_100),
+                expires_at: Some(1_700_000_400),
                 expired: false,
                 has_refresh_token: true,
                 has_api_key: false,
