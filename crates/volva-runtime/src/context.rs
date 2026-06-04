@@ -1165,10 +1165,7 @@ mod tests {
     #[test]
     fn assemble_prompt_does_not_redact_user_prompt() {
         let config = VolvaConfig::default();
-        let request = test_request(
-            "api_key: user-provided-secret",
-            "volva-run-test",
-        );
+        let request = test_request("api_key: user-provided-secret", "volva-run-test");
 
         let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
 
