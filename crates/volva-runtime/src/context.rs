@@ -130,10 +130,10 @@ pub(crate) fn assemble_prompt_with_memory_and_recall(
     // Collect optional context blocks between the envelope and user prompt.
     let mut extra_blocks = Vec::new();
     if let Some(block) = memory_protocol.filter(|b| !b.trim().is_empty()) {
-        extra_blocks.push(block.to_string());
+        extra_blocks.push(redact_context_block(block));
     }
     if let Some(block) = session_recall.filter(|b| !b.trim().is_empty()) {
-        extra_blocks.push(block.to_string());
+        extra_blocks.push(redact_context_block(block));
     }
 
     let final_prompt = if extra_blocks.is_empty() {
@@ -374,6 +374,181 @@ fn format_session_recall_block(project: &str, raw_output: &str) -> String {
         lines.push(line.to_string());
     }
     lines.join("\n")
+}
+
+/// Redact sensitive patterns from a context block without truncation.
+///
+/// Process the block line by line, replacing:
+/// - `Bearer <token>` → `Bearer [REDACTED]` (case-insensitive on "bearer ")
+/// - Sensitive key assignments in both forms:
+///   - Colon form: `api_key: sk-secret123` → `api_key: [REDACTED]`
+///   - Env form: `FOO_TOKEN=xyz` → `FOO_TOKEN=[REDACTED]`
+///
+/// Where the key name (case-insensitively) ends in `_key`, `_token`, `_secret`, or `_password`.
+/// - Long hex runs: any run of 40+ consecutive ASCII hex digits → `[REDACTED]`
+///
+/// Unlike diagnostic redaction, this function preserves the full line length
+/// and does not truncate. Every line and the overall structure are maintained.
+fn redact_context_block(block: &str) -> String {
+    let redacted = block
+        .lines()
+        .map(redact_line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if block.ends_with('\n') && !redacted.ends_with('\n') {
+        format!("{redacted}\n")
+    } else {
+        redacted
+    }
+}
+
+/// A key name (case-insensitive) is sensitive when it ends in one of these.
+fn is_sensitive_key(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    upper.ends_with("_KEY")
+        || upper.ends_with("_TOKEN")
+        || upper.ends_with("_SECRET")
+        || upper.ends_with("_PASSWORD")
+}
+
+/// Redact every `Bearer <token>` on a line. Matches "bearer" as a word (not a
+/// substring of another word) followed by any whitespace (space or tab),
+/// optionally a quote, then the token. Only the token is replaced; the keyword,
+/// separating whitespace, and any surrounding quote are preserved. Handles
+/// multiple occurrences on one line.
+fn redact_bearer_tokens(input: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity(input.len());
+    let mut copied_to = 0usize;
+    let mut search_from = 0usize;
+    while let Some(rel) = lower[search_from..].find("bearer") {
+        let kw_start = search_from + rel;
+        let kw_end = kw_start + 6; // byte length of "bearer"
+        // Word boundary: the char before "bearer" must not be alphanumeric/underscore.
+        let preceded_by_word = kw_start > 0
+            && (bytes[kw_start - 1].is_ascii_alphanumeric() || bytes[kw_start - 1] == b'_');
+        if preceded_by_word {
+            search_from = kw_end;
+            continue;
+        }
+        let after = &input[kw_end..];
+        let ws_len = after.len() - after.trim_start().len();
+        if ws_len == 0 {
+            // not "Bearer <token>" form (no whitespace after the keyword)
+            search_from = kw_end;
+            continue;
+        }
+        let token_region = &input[kw_end + ws_len..];
+        let q = usize::from(token_region.starts_with('"') || token_region.starts_with('\''));
+        let token_body = &token_region[q..];
+        let end = token_body
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+            .unwrap_or(token_body.len());
+        if end == 0 {
+            // no token after the keyword (e.g. trailing `Bearer ` or `Bearer ""`)
+            search_from = kw_end + ws_len;
+            continue;
+        }
+        let token_start = kw_end + ws_len + q;
+        result.push_str(&input[copied_to..token_start]);
+        result.push_str("[REDACTED]");
+        copied_to = token_start + end;
+        search_from = copied_to;
+    }
+    result.push_str(&input[copied_to..]);
+    result
+}
+
+/// Redact the value of any sensitive `key<sep>value` assignment on a line, for
+/// the given separator (`=` or `:`). The key may be wrapped in quotes (JSON
+/// `"key":`). Only the value token is replaced — the scan stops at the first
+/// whitespace or closing quote/`,`/`}` — so the key, separator, intervening
+/// whitespace, surrounding quotes, and the remainder of the line are preserved.
+fn redact_sensitive_assignments(input: &str, sep: char) -> String {
+    let sep_b = sep as u8;
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity(input.len());
+    let mut last_end = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == sep_b {
+            // Allow a closing quote immediately before the separator (JSON `"key":`).
+            let mut key_end = i;
+            if key_end > 0 && (bytes[key_end - 1] == b'"' || bytes[key_end - 1] == b'\'') {
+                key_end -= 1;
+            }
+            let mut name_start = key_end;
+            while name_start > 0
+                && (bytes[name_start - 1].is_ascii_alphanumeric() || bytes[name_start - 1] == b'_')
+            {
+                name_start -= 1;
+            }
+            let name = &input[name_start..key_end];
+            if name_start >= last_end && !name.is_empty() && is_sensitive_key(name) {
+                let after = &input[i + 1..];
+                let ws_len = after.len() - after.trim_start().len();
+                let value = &after[ws_len..];
+                let q = usize::from(value.starts_with('"') || value.starts_with('\''));
+                let vbody = &value[q..];
+                let vend = vbody
+                    .find(|c: char| {
+                        c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == '}'
+                    })
+                    .unwrap_or(vbody.len());
+                if vend > 0 {
+                    result.push_str(&input[last_end..=i]); // through the separator
+                    result.push_str(&after[..ws_len]); // preserve spacing
+                    result.push_str(&value[..q]); // preserve opening quote
+                    result.push_str("[REDACTED]");
+                    last_end = i + 1 + ws_len + q + vend;
+                    i = last_end;
+                    continue;
+                }
+                // vend == 0: no value token to redact; fall through and keep scanning.
+            }
+        }
+        i += 1;
+    }
+    result.push_str(&input[last_end..]);
+    result
+}
+
+/// Redact sensitive patterns from a single line without truncation.
+fn redact_line(line: &str) -> String {
+    let mut output = redact_bearer_tokens(line);
+    output = redact_sensitive_assignments(&output, '=');
+    output = redact_sensitive_assignments(&output, ':');
+    replace_long_hex_in_line(&output)
+}
+
+/// Replace hex strings of 40 or more consecutive hex characters with `[REDACTED]`.
+/// Does not truncate the line.
+fn replace_long_hex_in_line(input: &str) -> String {
+    const MIN_HEX_LEN: usize = 40;
+    let mut result = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_hexdigit() {
+            let start = i;
+            while i < chars.len() && chars[i].is_ascii_hexdigit() {
+                i += 1;
+            }
+            let run_len = i - start;
+            if run_len >= MIN_HEX_LEN {
+                result.push_str("[REDACTED]");
+            } else {
+                for ch in &chars[start..i] {
+                    result.push(*ch);
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
 }
 
 fn format_memory_protocol_block(surface: &MemoryProtocolSurface) -> String {
@@ -759,5 +934,374 @@ mod tests {
             result, fake,
             "nonexistent path must fall back to the raw input"
         );
+    }
+
+    #[test]
+    fn redact_context_block_preserves_secret_free_block_byte_identical() {
+        let block = "[hyphae-memory-protocol]\nschema_version: 1.0\nproject: myproject\nsummary: Test summary\nrecall_tools: tool1, tool2";
+        let redacted = super::redact_context_block(block);
+        assert_eq!(
+            redacted, block,
+            "secret-free block must be returned byte-identical"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_colon_style_api_key() {
+        let block = "[hyphae-session-recall]\nproject: myproject\napi_key: sk-secret123\ndone";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("api_key: [REDACTED]"),
+            "colon-style api_key value must be redacted"
+        );
+        assert!(
+            !redacted.contains("sk-secret123"),
+            "actual secret must not appear in redacted output"
+        );
+        // Line count must be preserved
+        assert_eq!(
+            redacted.lines().count(),
+            block.lines().count(),
+            "line count must be preserved"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_colon_style_token() {
+        let block = "api_token: Bearer xyz789\nother: value";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("api_token: [REDACTED]"),
+            "colon-style token must be redacted"
+        );
+        assert!(
+            !redacted.contains("xyz789"),
+            "actual token must not appear in redacted output"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_env_style_token() {
+        let block = "FOO_TOKEN=abcdef123456 other_var=value";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("FOO_TOKEN=[REDACTED]"),
+            "env-style FOO_TOKEN must be redacted"
+        );
+        assert!(
+            !redacted.contains("abcdef123456"),
+            "actual token value must not appear in redacted output"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_env_style_secret() {
+        let block = "DATABASE_SECRET=mypassword123";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("DATABASE_SECRET=[REDACTED]"),
+            "env-style DATABASE_SECRET must be redacted"
+        );
+        assert!(
+            !redacted.contains("mypassword123"),
+            "actual secret must not appear in redacted output"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_does_not_truncate_long_lines() {
+        let long_value = "a".repeat(1000);
+        let block = format!("api_key: {long_value}");
+        let redacted = super::redact_context_block(&block);
+        // After redaction, should be much shorter (api_key: [REDACTED])
+        // but should NOT be truncated by a line length limit
+        assert!(
+            redacted.len() < block.len(),
+            "redacted line should be shorter due to secret replacement"
+        );
+        assert!(
+            !redacted.contains(&long_value),
+            "original long value must not appear in output"
+        );
+        // The redacted value should be small and clean
+        assert!(redacted.contains("api_key: [REDACTED]"));
+    }
+
+    #[test]
+    fn redact_context_block_redacts_bearer_token() {
+        let block = "Authorization: Bearer sk-proj-secret123 and other text";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("Bearer [REDACTED]"),
+            "Bearer token must be redacted"
+        );
+        assert!(
+            !redacted.contains("sk-proj-secret123"),
+            "actual bearer token must not appear in redacted output"
+        );
+        assert!(
+            redacted.contains("and other text"),
+            "text after bearer token must be preserved"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_bearer_token_case_insensitive() {
+        let block = "header: BEARER longtoken123456 tail";
+        let redacted = super::redact_context_block(block);
+        assert!(
+            redacted.contains("BEARER [REDACTED]"),
+            "BEARER (uppercase) must be redacted"
+        );
+        assert!(
+            redacted.contains("tail"),
+            "text after bearer token must be preserved"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_redacts_40_plus_hex_digits() {
+        let hex_string = "0123456789abcdef0123456789abcdef01234567"; // exactly 40
+        let block = format!("git_sha: {hex_string}");
+        let redacted = super::redact_context_block(&block);
+        assert!(
+            redacted.contains("[REDACTED]"),
+            "40+ hex digit run must be redacted"
+        );
+        assert!(
+            !redacted.contains(hex_string),
+            "actual hex string must not appear in output"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_preserves_short_hex_sequences() {
+        let block = "short_hex: abc123def456 and 39_hex_chars_0123456789abcdef012345678";
+        let redacted = super::redact_context_block(block);
+        // Hex sequences less than 40 chars should not be redacted
+        assert!(
+            redacted.contains("abc123def456"),
+            "short hex sequences must not be redacted"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_preserves_keys_without_sensitive_suffix() {
+        let block = "project_name: myproject\napi_call: get_status\ndebug_info: value";
+        let redacted = super::redact_context_block(block);
+        assert_eq!(
+            redacted, block,
+            "non-sensitive keys must not trigger redaction"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_multiline_preserves_structure() {
+        let block = "[hyphae-memory-protocol]\nschema_version: 1.0\napi_key: sk-abc123\nsummary: Test block\nproject: demo";
+        let redacted = super::redact_context_block(block);
+        let original_lines = block.lines().count();
+        let redacted_lines = redacted.lines().count();
+        assert_eq!(
+            original_lines, redacted_lines,
+            "line count must be preserved across all lines"
+        );
+        assert!(
+            redacted.contains("[hyphae-memory-protocol]"),
+            "headers must be preserved"
+        );
+        assert!(
+            redacted.contains("schema_version: 1.0"),
+            "non-sensitive lines must be preserved"
+        );
+        assert!(
+            redacted.contains("api_key: [REDACTED]"),
+            "sensitive values must be redacted"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_redacts_memory_protocol_block() {
+        let config = VolvaConfig::default();
+        let request = test_request("do work", "volva-run-test");
+        let protocol = "[hyphae-memory-protocol]\napi_key: sk-secret123\nsummary: test";
+
+        let prepared = assemble_prompt_with_memory_protocol(&config, &request, Some(protocol));
+
+        let text = prepared.final_prompt();
+        assert!(
+            text.contains("api_key: [REDACTED]"),
+            "memory protocol block must be redacted"
+        );
+        assert!(
+            !text.contains("sk-secret123"),
+            "secret in memory protocol must not appear in prompt"
+        );
+        assert!(
+            text.contains("[hyphae-memory-protocol]"),
+            "header must be preserved"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_redacts_session_recall_block() {
+        let config = VolvaConfig::default();
+        let request = test_request("do work", "volva-run-test");
+        let recall = "[hyphae-session-recall]\napi_token: xyz789\nproject: myproj";
+
+        let prepared =
+            assemble_prompt_with_memory_and_recall(&config, &request, None, Some(recall));
+
+        let text = prepared.final_prompt();
+        assert!(
+            text.contains("api_token: [REDACTED]"),
+            "session recall block must be redacted"
+        );
+        assert!(
+            !text.contains("xyz789"),
+            "secret in session recall must not appear in prompt"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_does_not_redact_user_prompt() {
+        let config = VolvaConfig::default();
+        let request = test_request(
+            "api_key: user-provided-secret",
+            "volva-run-test",
+        );
+
+        let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
+
+        let text = prepared.final_prompt();
+        // User prompt should NOT be redacted
+        assert!(
+            text.contains("api_key: user-provided-secret"),
+            "user prompt content must not be redacted"
+        );
+    }
+
+    #[test]
+    fn assemble_prompt_does_not_redact_envelope() {
+        let config = VolvaConfig::default();
+        let request = test_request("task", "volva-run-test");
+
+        let prepared = assemble_prompt_with_memory_protocol(&config, &request, None);
+
+        let text = prepared.final_prompt();
+        // Envelope should contain the session ID without redaction
+        assert!(
+            text.contains("session_id: volva-run-test"),
+            "envelope content must not be redacted"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_preserves_long_non_sensitive_line_byte_identical() {
+        // Build a long line of ordinary prose (no sensitive keys, no hex runs of 40+)
+        let long_prose = "summary: ".to_string()
+            + &"Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+                .repeat(7);
+        let input = long_prose;
+        assert!(
+            input.len() > 500,
+            "test line must be long (> 500 chars) to verify no truncation"
+        );
+        let result = super::redact_context_block(&input);
+        assert_eq!(
+            result, input,
+            "long non-sensitive line must pass through byte-identical"
+        );
+    }
+
+    #[test]
+    fn redact_context_block_preserves_realistic_memory_protocol_block_byte_identical() {
+        let block = "[hyphae-memory-protocol]\nschema_version: 1.0\nproject: basidiocarp\nsummary: Recall prior decisions before starting work.\nrecall_tools: hyphae_memory_recall, hyphae_recall_global\npassive_resource: hyphae://protocol/current\nstore_tool: hyphae_memory_store\nproject_topics: errors/resolved, decisions/volva\nprotocol_resource: hyphae://protocol/current";
+        let result = super::redact_context_block(block);
+        assert_eq!(
+            result, block,
+            "realistic memory-protocol block with no sensitive fields must be byte-identical"
+        );
+    }
+
+    #[test]
+    fn bearer_tab_separated_is_redacted() {
+        let input = "auth: Bearer\tSECRETTOKEN123 tail";
+        let result = super::redact_line(input);
+        assert!(!result.contains("SECRETTOKEN123"));
+        assert!(result.contains("[REDACTED]"));
+        assert!(result.ends_with(" tail"));
+    }
+
+    #[test]
+    fn bearer_quoted_token_is_redacted() {
+        let input = r#"auth: Bearer "SECRETQUOTED" tail"#;
+        let result = super::redact_line(input);
+        assert!(!result.contains("SECRETQUOTED"));
+        assert!(result.contains("[REDACTED]"));
+        assert!(result.contains("tail"));
+        assert!(result.contains(r#""[REDACTED]""#));
+    }
+
+    #[test]
+    fn multiple_bearer_tokens_on_one_line_all_redacted() {
+        let input = "a Bearer SECRETONE b Bearer SECRETTWO c";
+        let result = super::redact_line(input);
+        assert!(!result.contains("SECRETONE"));
+        assert!(!result.contains("SECRETTWO"));
+        assert!(result.contains("a "));
+        assert!(result.contains(" b "));
+        assert!(result.contains(" c"));
+    }
+
+    #[test]
+    fn bearer_as_substring_of_word_is_not_matched() {
+        let input = "cyberbearer is a word";
+        let result = super::redact_line(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn json_quoted_sensitive_key_value_is_redacted() {
+        let input = r#"{"api_key":"sk-SECRETJSON","other":"keep"}"#;
+        let result = super::redact_line(input);
+        assert!(!result.contains("sk-SECRETJSON"));
+        assert!(result.contains("keep"));
+        assert!(result.contains("other"));
+        assert!(result.contains("api_key"));
+    }
+
+    #[test]
+    fn colon_pass_preserves_content_after_secret() {
+        let input = "api_key: sk-SECRET trailing words here";
+        let result = super::redact_line(input);
+        assert_eq!(result, "api_key: [REDACTED] trailing words here");
+    }
+
+    #[test]
+    fn nested_colon_secret_preserves_closing_brace() {
+        let input = "config: {api_token: SECRETNEST}";
+        let result = super::redact_line(input);
+        assert_eq!(result, "config: {api_token: [REDACTED]}");
+    }
+
+    #[test]
+    fn second_colon_field_on_line_is_redacted() {
+        let input = "summary: note user_password: hunter2 is secret";
+        let result = super::redact_line(input);
+        assert_eq!(result, "summary: note user_password: [REDACTED] is secret");
+    }
+
+    #[test]
+    fn env_assignment_still_redacted() {
+        let input = "FOO_TOKEN=xyzSECRET more";
+        let result = super::redact_line(input);
+        assert_eq!(result, "FOO_TOKEN=[REDACTED] more");
+    }
+
+    #[test]
+    fn empty_sensitive_value_is_left_alone() {
+        let input = "api_key:";
+        let result = super::redact_line(input);
+        assert_eq!(result, "api_key:");
     }
 }
