@@ -921,7 +921,7 @@ mod tests {
         assert_eq!(result, canonical.to_string_lossy().as_ref());
         // Must be an absolute path, not a bare basename.
         assert!(
-            result.contains('/'),
+            std::path::Path::new(&result).is_absolute(),
             "result must be a full path, not just a basename: {result}"
         );
     }
