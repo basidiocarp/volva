@@ -1332,6 +1332,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rhizome-cache"
+version = "0.0.0"
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1557,8 +1561,8 @@ dependencies = [
 
 [[package]]
 name = "spore"
-version = "0.6.2"
-source = "git+https://github.com/basidiocarp/spore?rev=85414a54afc16597297f6cd42edec5985474d767#85414a54afc16597297f6cd42edec5985474d767"
+version = "0.6.3"
+source = "git+https://github.com/basidiocarp/spore?rev=d97a226a9a4051e42fbe1831aae4c811e7c65ac6#d97a226a9a4051e42fbe1831aae4c811e7c65ac6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2096,11 +2100,11 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "volva-adapters"
-version = "0.3.2"
+version = "0.3.3"
 
 [[package]]
 name = "volva-api"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -2115,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "volva-auth"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -2136,11 +2140,11 @@ dependencies = [
 
 [[package]]
 name = "volva-bridge"
-version = "0.3.2"
+version = "0.3.3"
 
 [[package]]
 name = "volva-cli"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2163,14 +2167,14 @@ dependencies = [
 
 [[package]]
 name = "volva-compat"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "volva-config"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2182,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "volva-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "clap",
  "serde",
@@ -2194,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "volva-runtime"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2219,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "volva-tools"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "volva-core",
 ]

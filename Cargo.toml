@@ -15,7 +15,7 @@ dirs = "6"
 opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-spore = { git = "https://github.com/basidiocarp/spore", rev = "85414a54afc16597297f6cd42edec5985474d767", features = ["otel"] }
+spore = { git = "https://github.com/basidiocarp/spore", rev = "d97a226a9a4051e42fbe1831aae4c811e7c65ac6", features = ["otel"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter", "fmt"] }
